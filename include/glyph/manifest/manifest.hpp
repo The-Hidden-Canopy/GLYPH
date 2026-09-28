@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,12 @@ struct EncodedManifest {
     std::string reason;
 };
 
+struct DecodedManifest {
+    Status status = Status::ok;
+    Manifest manifest{};
+    std::string reason;
+};
+
 [[nodiscard]] ManifestValidation validate_manifest(
     const Manifest& manifest,
     const ManifestLimits& limits = {});
@@ -54,5 +61,8 @@ struct EncodedManifest {
     const Manifest& manifest,
     const ManifestLimits& limits = {});
 
-}  // namespace glyph
+[[nodiscard]] DecodedManifest decode_manifest(
+    std::span<const std::byte> encoded,
+    const ManifestLimits& limits = {});
 
+}  // namespace glyph

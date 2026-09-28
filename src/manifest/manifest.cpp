@@ -7,6 +7,8 @@
 #include <cctype>
 #include <limits>
 #include <span>
+#include <string_view>
+#include <utility>
 
 namespace glyph {
 namespace {
@@ -90,6 +92,155 @@ void append_bytes(std::vector<std::byte>& output,
 
 void append_null(std::vector<std::byte>& output) {
     append_byte(output, 0xf6U);
+}
+
+class CborReader final {
+public:
+    explicit CborReader(const std::span<const std::byte> bytes) : bytes_(bytes) {}
+
+    [[nodiscard]] Status read_head(std::uint8_t& major,
+                                   std::uint64_t& value) {
+        if (offset_ >= bytes_.size()) {
+            return Status::protocol;
+        }
+        const auto initial = std::to_integer<std::uint8_t>(bytes_[offset_++]);
+        major = static_cast<std::uint8_t>(initial >> 5U);
+        const auto additional = static_cast<std::uint8_t>(initial & 0x1fU);
+        if (additional < 24U) {
+            value = additional;
+            return Status::ok;
+        }
+        if (additional == 31U) {
+            return Status::protocol;
+        }
+
+        unsigned int byte_count = 0U;
+        if (additional == 24U) {
+            byte_count = 1U;
+        } else if (additional == 25U) {
+            byte_count = 2U;
+        } else if (additional == 26U) {
+            byte_count = 4U;
+        } else if (additional == 27U) {
+            byte_count = 8U;
+        } else {
+            return Status::protocol;
+        }
+        if (bytes_.size() - offset_ < byte_count) {
+            return Status::protocol;
+        }
+
+        value = 0U;
+        for (unsigned int index = 0U; index < byte_count; ++index) {
+            value = (value << 8U) |
+                    std::to_integer<std::uint8_t>(bytes_[offset_++]);
+        }
+        if ((additional == 24U && value < 24U) ||
+            (additional == 25U && value <= 0xffU) ||
+            (additional == 26U && value <= 0xffffU) ||
+            (additional == 27U && value <= 0xffffffffULL)) {
+            return Status::protocol;
+        }
+        return Status::ok;
+    }
+
+    [[nodiscard]] Status read_uint(std::uint64_t& value) {
+        std::uint8_t major = 0U;
+        const auto status = read_head(major, value);
+        if (status != Status::ok || major != 0U) {
+            return Status::protocol;
+        }
+        return Status::ok;
+    }
+
+    [[nodiscard]] Status read_text(std::string& value,
+                                   const std::size_t max_bytes) {
+        std::uint8_t major = 0U;
+        std::uint64_t length = 0U;
+        if (read_head(major, length) != Status::ok || major != 3U) {
+            return Status::protocol;
+        }
+        if (length > max_bytes || length > bytes_.size() - offset_) {
+            return length > max_bytes ? Status::resource_limit
+                                      : Status::protocol;
+        }
+        value.assign(reinterpret_cast<const char*>(bytes_.data() + offset_),
+                     static_cast<std::size_t>(length));
+        offset_ += static_cast<std::size_t>(length);
+        return Status::ok;
+    }
+
+    [[nodiscard]] Status read_bytes(std::vector<std::byte>& value,
+                                    const std::size_t expected_bytes) {
+        std::uint8_t major = 0U;
+        std::uint64_t length = 0U;
+        if (read_head(major, length) != Status::ok || major != 2U) {
+            return Status::protocol;
+        }
+        if (length != expected_bytes || length > bytes_.size() - offset_) {
+            return Status::protocol;
+        }
+        value.assign(bytes_.begin() + static_cast<std::ptrdiff_t>(offset_),
+                     bytes_.begin() +
+                         static_cast<std::ptrdiff_t>(offset_ + length));
+        offset_ += static_cast<std::size_t>(length);
+        return Status::ok;
+    }
+
+    [[nodiscard]] Status read_null() {
+        if (offset_ >= bytes_.size() ||
+            std::to_integer<std::uint8_t>(bytes_[offset_]) != 0xf6U) {
+            return Status::protocol;
+        }
+        ++offset_;
+        return Status::ok;
+    }
+
+    [[nodiscard]] Status read_empty_map() {
+        std::uint8_t major = 0U;
+        std::uint64_t count = 0U;
+        if (read_head(major, count) != Status::ok || major != 5U ||
+            count != 0U) {
+            return Status::protocol;
+        }
+        return Status::ok;
+    }
+
+    [[nodiscard]] bool at_end() const noexcept {
+        return offset_ == bytes_.size();
+    }
+
+private:
+    std::span<const std::byte> bytes_;
+    std::size_t offset_ = 0U;
+};
+
+DecodedManifest decode_failure(const Status status, std::string reason) {
+    return DecodedManifest{status, {}, std::move(reason)};
+}
+
+Status read_key(CborReader& reader, const std::string_view expected) {
+    std::string actual;
+    const auto status = reader.read_text(actual, 32U);
+    if (status != Status::ok) {
+        return status;
+    }
+    return actual == expected ? Status::ok : Status::protocol;
+}
+
+Status read_optional_text(CborReader& reader,
+                          std::optional<std::string>& value,
+                          const std::size_t max_bytes) {
+    if (reader.read_null() == Status::ok) {
+        value.reset();
+        return Status::ok;
+    }
+    std::string text;
+    const auto status = reader.read_text(text, max_bytes);
+    if (status == Status::ok) {
+        value = std::move(text);
+    }
+    return status;
 }
 
 }  // namespace
@@ -177,6 +328,9 @@ EncodedManifest encode_manifest(const Manifest& manifest,
         append_null(output);
     }
 
+    append_key(output, "shard_size");
+    append_uint(output, manifest.shard_size);
+
     append_key(output, "fec_profile");
     append_text(output, manifest.fec_profile);
 
@@ -201,5 +355,114 @@ EncodedManifest encode_manifest(const Manifest& manifest,
     return EncodedManifest{Status::ok, std::move(output), {}};
 }
 
-}  // namespace glyph
+DecodedManifest decode_manifest(const std::span<const std::byte> encoded,
+                                const ManifestLimits& limits) {
+    if (encoded.size() > limits.max_manifest_bytes) {
+        return decode_failure(Status::resource_limit,
+                              "encoded manifest exceeds configured limit");
+    }
 
+    CborReader reader(encoded);
+    std::uint8_t major = 0U;
+    std::uint64_t field_count = 0U;
+    if (reader.read_head(major, field_count) != Status::ok || major != 5U ||
+        field_count != kManifestFieldCount) {
+        return decode_failure(Status::protocol, "manifest map shape is invalid");
+    }
+
+    Manifest manifest;
+    std::string text;
+    std::uint64_t number = 0U;
+    std::vector<std::byte> bytes;
+
+    if (read_key(reader, "protocol") != Status::ok ||
+        reader.read_text(text, 16U) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid protocol field");
+    }
+    manifest.protocol = std::move(text);
+
+    if (read_key(reader, "block_size") != Status::ok ||
+        reader.read_uint(number) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid block_size field");
+    }
+    manifest.block_size = number;
+
+    if (read_key(reader, "created_at") != Status::ok ||
+        read_optional_text(reader, manifest.created_at,
+                           limits.max_created_at_bytes) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid created_at field");
+    }
+
+    if (read_key(reader, "encryption") != Status::ok ||
+        reader.read_null() != Status::ok) {
+        return decode_failure(Status::unsupported,
+                              "secure encryption field is not implemented");
+    }
+
+    if (read_key(reader, "extensions") != Status::ok ||
+        reader.read_empty_map() != Status::ok) {
+        return decode_failure(Status::unsupported,
+                              "manifest extensions are not implemented");
+    }
+
+    if (read_key(reader, "media_type") != Status::ok ||
+        read_optional_text(reader, manifest.media_type,
+                           limits.max_media_type_bytes) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid media_type field");
+    }
+
+    if (read_key(reader, "shard_size") != Status::ok ||
+        reader.read_uint(number) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid shard_size field");
+    }
+    manifest.shard_size = number;
+
+    if (read_key(reader, "fec_profile") != Status::ok ||
+        reader.read_text(manifest.fec_profile,
+                         limits.max_fec_profile_bytes) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid fec_profile field");
+    }
+
+    if (read_key(reader, "object_size") != Status::ok ||
+        reader.read_uint(manifest.object_size) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid object_size field");
+    }
+
+    if (read_key(reader, "transfer_id") != Status::ok ||
+        reader.read_bytes(bytes, manifest.transfer_id.size()) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid transfer_id field");
+    }
+    for (std::size_t index = 0U; index < manifest.transfer_id.size(); ++index) {
+        manifest.transfer_id[index] = std::to_integer<std::uint8_t>(bytes[index]);
+    }
+
+    if (read_key(reader, "display_name") != Status::ok ||
+        reader.read_text(manifest.display_name,
+                         limits.max_display_name_bytes) != Status::ok) {
+        return decode_failure(Status::protocol, "invalid display_name field");
+    }
+
+    if (read_key(reader, "object_sha256") != Status::ok ||
+        reader.read_bytes(bytes, manifest.object_sha256.bytes.size()) !=
+            Status::ok) {
+        return decode_failure(Status::protocol, "invalid object_sha256 field");
+    }
+    for (std::size_t index = 0U; index < manifest.object_sha256.bytes.size();
+         ++index) {
+        manifest.object_sha256.bytes[index] =
+            std::to_integer<std::uint8_t>(bytes[index]);
+    }
+
+    if (!reader.at_end()) {
+        return decode_failure(Status::protocol,
+                              "trailing bytes after manifest");
+    }
+
+    const auto validation = validate_manifest(manifest, limits);
+    if (validation.status != Status::ok) {
+        return decode_failure(validation.status, validation.reason);
+    }
+    return DecodedManifest{Status::ok, std::move(manifest), {}};
+}
+
+}  // namespace glyph

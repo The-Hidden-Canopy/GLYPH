@@ -7,7 +7,11 @@ option(GLYPH_BUILD_TESTS "Build the GLYPH unit tests" ON)
 add_library(glyph_core STATIC
     src/crypto/sha256.cpp
     src/core/status.cpp
+    src/frame/crc32c.cpp
+    src/frame/frame.cpp
+    src/fec/reed_solomon.cpp
     src/manifest/manifest.cpp
+    src/phy/rgb8.cpp
     src/transport/object_io.cpp
 )
 

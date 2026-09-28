@@ -88,11 +88,32 @@ int main() {
            "ac6870726f746f636f6c67676c7970682f316a626c6f636b5f73697a65190400"
            "6a637265617465645f6174f66a656e6372797074696f6ef66a657874656e73696f"
            "6e73a06a6d656469615f7479706578186170706c69636174696f6e2f6f637465742d"
-           "73747265616d6b6665635f70726f66696c6566525333322b386b6f626a6563745f"
+           "73747265616d6a73686172645f73697a651901006b6665635f70726f66696c65"
+           "66525333322b386b6f626a6563745f"
            "73697a65136b7472616e736665725f696450000102030405060708090a0b0c0d0e0f"
            "6c646973706c61795f6e616d656a73616d706c652e62696e6d6f626a6563745f7368"
            "613235365820b06db03b26e8d72ba8fa7528e758d4c26e71f76e23695328dda3b593"
            "bf0727f8");
+
+    const auto decoded = glyph::decode_manifest(encoded.bytes);
+    assert(decoded.status == glyph::Status::ok);
+    assert(decoded.manifest.protocol == manifest.protocol);
+    assert(decoded.manifest.transfer_id == manifest.transfer_id);
+    assert(decoded.manifest.object_sha256 == manifest.object_sha256);
+    assert(decoded.manifest.object_size == manifest.object_size);
+    assert(decoded.manifest.display_name == manifest.display_name);
+    assert(decoded.manifest.media_type == manifest.media_type);
+    assert(decoded.manifest.block_size == manifest.block_size);
+    assert(decoded.manifest.shard_size == manifest.shard_size);
+    assert(decoded.manifest.fec_profile == manifest.fec_profile);
+
+    auto truncated = encoded.bytes;
+    truncated.pop_back();
+    assert(glyph::decode_manifest(truncated).status == glyph::Status::protocol);
+    glyph::ManifestLimits one_byte_limit;
+    one_byte_limit.max_manifest_bytes = 1U;
+    assert(glyph::decode_manifest(encoded.bytes, one_byte_limit).status ==
+           glyph::Status::resource_limit);
 
     auto invalid = manifest;
     invalid.transfer_id.fill(0U);

@@ -9,12 +9,23 @@ account-free, locally verifiable operation.
 
 ## Current status
 
-This repository is the initial buildable foundation for the v0.1 engineering
-specification. It is not yet a conforming optical implementation. The current
-code provides only a small, CPU-portable core status/version seam and a
-build/test boundary. Optical framing, manifest canonicalization, FEC,
-calibration, camera/display backends, crypto, and conformance vectors remain
-explicit work packages.
+This repository is an early, buildable implementation slice of the v0.1
+engineering specification. It is not yet a conforming optical implementation.
+The current CPU-portable core provides:
+
+- streaming SHA-256 and independently checked digest vectors;
+- bounded source-file hashing and exact object verification;
+- a deterministic core-manifest CBOR encoder with fixed v0.1 field ordering;
+- temporary-file output with hash/length verification before atomic promotion;
+- the 64-byte frame control header and 12-byte tile miniheader codecs; and
+- CRC32C framing checks with corruption and resource-boundary tests; and
+- bounded systematic GF(256) erasure recovery for the M0 shard model; and
+- RGB8 primary-channel symbol packing with confidence-to-erasure classification.
+
+The manifest encoder currently emits `encryption = null` and an empty
+`extensions` map. Secure-profile fields, manifest decoding, inner ECC, optical
+layout, calibration, camera/display backends, GPU paths, and conformance
+hardware fixtures remain explicit work packages.
 
 The authoritative draft is [the open engineering specification](docs/GLYPH_Open_Engineering_Specification_v0.1.md).
 
@@ -41,6 +52,12 @@ optical, GPU, camera, media, throughput, or 100 MiB conformance claims.
 - `vectors/` — deterministic manifests, frames, FEC, and crypto vectors.
 - `benchmarks/` — reproducible receipts, not unqualified performance claims.
 
+The current work-package decisions are documented in
+[WP-01 object layer](docs/design/WP-01-object-layer.md) and
+[WP-02 frame codec](docs/design/WP-02-frame-codec.md), plus
+[WP-03 bounded FEC](docs/design/WP-03-fec.md), and
+[WP-04 RGB8 symbols](docs/design/WP-04-rgb8-symbols.md).
+
 ## Non-negotiable completion rule
 
 `COMPLETE` means exact object length plus SHA-256 equality. A visually correct
@@ -51,4 +68,3 @@ level test cannot substitute for whole-object verification.
 
 The repository is intended to use Apache-2.0 with SPDX-tracked dependencies.
 See [LICENSE](LICENSE).
-
