@@ -79,3 +79,5 @@ level test cannot substitute for whole-object verification.
 
 The repository is intended to use Apache-2.0 with SPDX-tracked dependencies.
 See [LICENSE](LICENSE).
+The project follows the
+[Open Canopy Contract](OPEN_CANOPY_CONTRACT.md).
