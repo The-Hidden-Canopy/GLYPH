@@ -8,6 +8,7 @@
 #include <fstream>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace glyph {
 
@@ -76,4 +77,3 @@ private:
 };
 
 }  // namespace glyph
-

@@ -15,17 +15,22 @@ Status: implemented as a CPU/source-unit slice.
   rename promotion.
 - Display-name sanitization that prevents path separators, control characters,
   Windows device names, and overwrite of an existing final path.
+- An identity-bound append-only resume journal for idempotent shard receipts
+  and verified block ranges, with CRC-protected records, bounded replay, and
+  crash-tail truncation.
 
 ## Deliberate boundary
 
-The encoder uses the fixed core map shape and canonical text-key ordering. Its
-secure `encryption` field is currently null and `extensions` is currently an
-empty map. There is no manifest decoder, secure-profile implementation, resume
-journal, or FEC reconstruction in this work package.
+The encoder and decoder use the fixed core map shape and canonical text-key
+ordering. Their secure `encryption` field is currently null and `extensions`
+is currently an empty map. Secure-profile implementation remains separate.
+The journal is single-writer and stores only verified receipt metadata;
+unverified object bytes remain disposable. FEC is delivered in WP-03.
 
 ## Evidence
 
 Evidence is source/unit: SHA-256 vectors, a deterministic manifest byte vector,
-resource-limit validation, path-boundary tests, integrity mismatch tests, and
-successful atomic promotion. No optical, simulator, GPU, camera, or physical
-hardware claim follows from these tests.
+resource-limit validation, path-boundary tests, integrity mismatch tests,
+successful atomic promotion, and resume-journal identity, replay, corruption,
+tail-recovery, idempotency, and bound tests. No optical, simulator, GPU,
+camera, or physical hardware claim follows from these tests.

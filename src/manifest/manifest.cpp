@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <limits>
+#include <new>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -295,64 +296,69 @@ EncodedManifest encode_manifest(const Manifest& manifest,
         return EncodedManifest{validation.status, {}, validation.reason};
     }
 
-    std::vector<std::byte> output;
-    output.reserve(512U);
-    append_type_and_length(output, 5U, kManifestFieldCount);
+    try {
+        std::vector<std::byte> output;
+        output.reserve(512U);
+        append_type_and_length(output, 5U, kManifestFieldCount);
 
-    // Canonical CBOR map order: text keys are sorted by encoded length, then
-    // lexicographically. Encryption is null and extensions are empty until
-    // their profile-specific representations are standardized.
-    append_key(output, "protocol");
-    append_text(output, manifest.protocol);
+        // Canonical CBOR map order: text keys are sorted by encoded length, then
+        // lexicographically. Encryption is null and extensions are empty until
+        // their profile-specific representations are standardized.
+        append_key(output, "protocol");
+        append_text(output, manifest.protocol);
 
-    append_key(output, "block_size");
-    append_uint(output, manifest.block_size);
+        append_key(output, "block_size");
+        append_uint(output, manifest.block_size);
 
-    append_key(output, "created_at");
-    if (manifest.created_at.has_value()) {
-        append_text(output, *manifest.created_at);
-    } else {
+        append_key(output, "created_at");
+        if (manifest.created_at.has_value()) {
+            append_text(output, *manifest.created_at);
+        } else {
+            append_null(output);
+        }
+
+        append_key(output, "encryption");
         append_null(output);
-    }
 
-    append_key(output, "encryption");
-    append_null(output);
+        append_key(output, "extensions");
+        append_type_and_length(output, 5U, 0U);
 
-    append_key(output, "extensions");
-    append_type_and_length(output, 5U, 0U);
+        append_key(output, "media_type");
+        if (manifest.media_type.has_value()) {
+            append_text(output, *manifest.media_type);
+        } else {
+            append_null(output);
+        }
 
-    append_key(output, "media_type");
-    if (manifest.media_type.has_value()) {
-        append_text(output, *manifest.media_type);
-    } else {
-        append_null(output);
-    }
+        append_key(output, "shard_size");
+        append_uint(output, manifest.shard_size);
 
-    append_key(output, "shard_size");
-    append_uint(output, manifest.shard_size);
+        append_key(output, "fec_profile");
+        append_text(output, manifest.fec_profile);
 
-    append_key(output, "fec_profile");
-    append_text(output, manifest.fec_profile);
+        append_key(output, "object_size");
+        append_uint(output, manifest.object_size);
 
-    append_key(output, "object_size");
-    append_uint(output, manifest.object_size);
+        append_key(output, "transfer_id");
+        append_bytes(output, manifest.transfer_id.data(), manifest.transfer_id.size());
 
-    append_key(output, "transfer_id");
-    append_bytes(output, manifest.transfer_id.data(), manifest.transfer_id.size());
+        append_key(output, "display_name");
+        append_text(output, manifest.display_name);
 
-    append_key(output, "display_name");
-    append_text(output, manifest.display_name);
+        append_key(output, "object_sha256");
+        append_bytes(output, manifest.object_sha256.bytes.data(),
+                     manifest.object_sha256.bytes.size());
 
-    append_key(output, "object_sha256");
-    append_bytes(output, manifest.object_sha256.bytes.data(),
-                 manifest.object_sha256.bytes.size());
+        if (output.size() > limits.max_manifest_bytes) {
+            return EncodedManifest{Status::resource_limit, {},
+                                   "encoded manifest exceeds configured limit"};
+        }
 
-    if (output.size() > limits.max_manifest_bytes) {
+        return EncodedManifest{Status::ok, std::move(output), {}};
+    } catch (const std::bad_alloc&) {
         return EncodedManifest{Status::resource_limit, {},
-                               "encoded manifest exceeds configured limit"};
+                               "manifest allocation exceeds configured limit"};
     }
-
-    return EncodedManifest{Status::ok, std::move(output), {}};
 }
 
 DecodedManifest decode_manifest(const std::span<const std::byte> encoded,
@@ -362,107 +368,112 @@ DecodedManifest decode_manifest(const std::span<const std::byte> encoded,
                               "encoded manifest exceeds configured limit");
     }
 
-    CborReader reader(encoded);
-    std::uint8_t major = 0U;
-    std::uint64_t field_count = 0U;
-    if (reader.read_head(major, field_count) != Status::ok || major != 5U ||
-        field_count != kManifestFieldCount) {
-        return decode_failure(Status::protocol, "manifest map shape is invalid");
-    }
+    try {
+        CborReader reader(encoded);
+        std::uint8_t major = 0U;
+        std::uint64_t field_count = 0U;
+        if (reader.read_head(major, field_count) != Status::ok || major != 5U ||
+            field_count != kManifestFieldCount) {
+            return decode_failure(Status::protocol, "manifest map shape is invalid");
+        }
 
-    Manifest manifest;
-    std::string text;
-    std::uint64_t number = 0U;
-    std::vector<std::byte> bytes;
+        Manifest manifest;
+        std::string text;
+        std::uint64_t number = 0U;
+        std::vector<std::byte> bytes;
 
-    if (read_key(reader, "protocol") != Status::ok ||
-        reader.read_text(text, 16U) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid protocol field");
-    }
-    manifest.protocol = std::move(text);
+        if (read_key(reader, "protocol") != Status::ok ||
+            reader.read_text(text, 16U) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid protocol field");
+        }
+        manifest.protocol = std::move(text);
 
-    if (read_key(reader, "block_size") != Status::ok ||
-        reader.read_uint(number) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid block_size field");
-    }
-    manifest.block_size = number;
+        if (read_key(reader, "block_size") != Status::ok ||
+            reader.read_uint(number) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid block_size field");
+        }
+        manifest.block_size = number;
 
-    if (read_key(reader, "created_at") != Status::ok ||
-        read_optional_text(reader, manifest.created_at,
-                           limits.max_created_at_bytes) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid created_at field");
-    }
+        if (read_key(reader, "created_at") != Status::ok ||
+            read_optional_text(reader, manifest.created_at,
+                               limits.max_created_at_bytes) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid created_at field");
+        }
 
-    if (read_key(reader, "encryption") != Status::ok ||
-        reader.read_null() != Status::ok) {
-        return decode_failure(Status::unsupported,
-                              "secure encryption field is not implemented");
-    }
+        if (read_key(reader, "encryption") != Status::ok ||
+            reader.read_null() != Status::ok) {
+            return decode_failure(Status::unsupported,
+                                  "secure encryption field is not implemented");
+        }
 
-    if (read_key(reader, "extensions") != Status::ok ||
-        reader.read_empty_map() != Status::ok) {
-        return decode_failure(Status::unsupported,
-                              "manifest extensions are not implemented");
-    }
+        if (read_key(reader, "extensions") != Status::ok ||
+            reader.read_empty_map() != Status::ok) {
+            return decode_failure(Status::unsupported,
+                                  "manifest extensions are not implemented");
+        }
 
-    if (read_key(reader, "media_type") != Status::ok ||
-        read_optional_text(reader, manifest.media_type,
-                           limits.max_media_type_bytes) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid media_type field");
-    }
+        if (read_key(reader, "media_type") != Status::ok ||
+            read_optional_text(reader, manifest.media_type,
+                               limits.max_media_type_bytes) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid media_type field");
+        }
 
-    if (read_key(reader, "shard_size") != Status::ok ||
-        reader.read_uint(number) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid shard_size field");
-    }
-    manifest.shard_size = number;
+        if (read_key(reader, "shard_size") != Status::ok ||
+            reader.read_uint(number) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid shard_size field");
+        }
+        manifest.shard_size = number;
 
-    if (read_key(reader, "fec_profile") != Status::ok ||
-        reader.read_text(manifest.fec_profile,
-                         limits.max_fec_profile_bytes) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid fec_profile field");
-    }
+        if (read_key(reader, "fec_profile") != Status::ok ||
+            reader.read_text(manifest.fec_profile,
+                             limits.max_fec_profile_bytes) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid fec_profile field");
+        }
 
-    if (read_key(reader, "object_size") != Status::ok ||
-        reader.read_uint(manifest.object_size) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid object_size field");
-    }
+        if (read_key(reader, "object_size") != Status::ok ||
+            reader.read_uint(manifest.object_size) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid object_size field");
+        }
 
-    if (read_key(reader, "transfer_id") != Status::ok ||
-        reader.read_bytes(bytes, manifest.transfer_id.size()) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid transfer_id field");
-    }
-    for (std::size_t index = 0U; index < manifest.transfer_id.size(); ++index) {
-        manifest.transfer_id[index] = std::to_integer<std::uint8_t>(bytes[index]);
-    }
+        if (read_key(reader, "transfer_id") != Status::ok ||
+            reader.read_bytes(bytes, manifest.transfer_id.size()) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid transfer_id field");
+        }
+        for (std::size_t index = 0U; index < manifest.transfer_id.size(); ++index) {
+            manifest.transfer_id[index] = std::to_integer<std::uint8_t>(bytes[index]);
+        }
 
-    if (read_key(reader, "display_name") != Status::ok ||
-        reader.read_text(manifest.display_name,
-                         limits.max_display_name_bytes) != Status::ok) {
-        return decode_failure(Status::protocol, "invalid display_name field");
-    }
+        if (read_key(reader, "display_name") != Status::ok ||
+            reader.read_text(manifest.display_name,
+                             limits.max_display_name_bytes) != Status::ok) {
+            return decode_failure(Status::protocol, "invalid display_name field");
+        }
 
-    if (read_key(reader, "object_sha256") != Status::ok ||
-        reader.read_bytes(bytes, manifest.object_sha256.bytes.size()) !=
-            Status::ok) {
-        return decode_failure(Status::protocol, "invalid object_sha256 field");
-    }
-    for (std::size_t index = 0U; index < manifest.object_sha256.bytes.size();
-         ++index) {
-        manifest.object_sha256.bytes[index] =
-            std::to_integer<std::uint8_t>(bytes[index]);
-    }
+        if (read_key(reader, "object_sha256") != Status::ok ||
+            reader.read_bytes(bytes, manifest.object_sha256.bytes.size()) !=
+                Status::ok) {
+            return decode_failure(Status::protocol, "invalid object_sha256 field");
+        }
+        for (std::size_t index = 0U; index < manifest.object_sha256.bytes.size();
+             ++index) {
+            manifest.object_sha256.bytes[index] =
+                std::to_integer<std::uint8_t>(bytes[index]);
+        }
 
-    if (!reader.at_end()) {
-        return decode_failure(Status::protocol,
-                              "trailing bytes after manifest");
-    }
+        if (!reader.at_end()) {
+            return decode_failure(Status::protocol,
+                                  "trailing bytes after manifest");
+        }
 
-    const auto validation = validate_manifest(manifest, limits);
-    if (validation.status != Status::ok) {
-        return decode_failure(validation.status, validation.reason);
+        const auto validation = validate_manifest(manifest, limits);
+        if (validation.status != Status::ok) {
+            return decode_failure(validation.status, validation.reason);
+        }
+        return DecodedManifest{Status::ok, std::move(manifest), {}};
+    } catch (const std::bad_alloc&) {
+        return decode_failure(Status::resource_limit,
+                              "manifest allocation exceeds configured limit");
     }
-    return DecodedManifest{Status::ok, std::move(manifest), {}};
 }
 
 }  // namespace glyph

@@ -30,6 +30,12 @@ struct Rgb8Observation {
 struct Rgb8Calibration {
     Rgb8Observation black{};
     Rgb8Observation one{1.0F, 1.0F, 1.0F};
+    std::array<std::array<float, 3>, 3> inverse_mixing{{
+        {{1.0F, 0.0F, 0.0F}},
+        {{0.0F, 1.0F, 0.0F}},
+        {{0.0F, 0.0F, 1.0F}},
+    }};
+    bool use_mixing_matrix = false;
     float min_confidence = 0.15F;
 };
 
@@ -50,10 +56,28 @@ struct Rgb8Decision {
     std::vector<std::byte>& payload,
     std::size_t max_payload_bytes = kMaxRgb8PayloadBytes);
 
+// Decodes already-classified RGB8 decisions. Erased cells contribute no
+// guessed bits; every logical byte touched by an erased cell is reported.
+[[nodiscard]] Status decode_rgb8_decisions(
+    std::span<const Rgb8Decision> decisions,
+    std::uint64_t expected_bytes,
+    std::vector<std::byte>& payload,
+    std::vector<std::uint32_t>& erasure_positions,
+    std::size_t max_payload_bytes = kMaxRgb8PayloadBytes);
+
+// Fits the inverse observed-channel mixing matrix from black, red-only,
+// green-only, and blue-only calibration patches.
+[[nodiscard]] Status fit_rgb8_calibration(
+    const Rgb8Observation& black,
+    const Rgb8Observation& red,
+    const Rgb8Observation& green,
+    const Rgb8Observation& blue,
+    float min_confidence,
+    Rgb8Calibration& calibration);
+
 [[nodiscard]] Status classify_rgb8_cell(
     const Rgb8Observation& observation,
     const Rgb8Calibration& calibration,
     Rgb8Decision& decision);
 
 }  // namespace glyph
-

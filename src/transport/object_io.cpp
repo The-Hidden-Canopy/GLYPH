@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cctype>
 #include <limits>
+#include <new>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -70,39 +71,45 @@ ObjectDigest hash_object_file(const std::filesystem::path& path,
         return result;
     }
 
-    std::vector<std::byte> buffer(limits.io_buffer_bytes);
-    Sha256 hasher;
+    try {
+        std::vector<std::byte> buffer(limits.io_buffer_bytes);
+        Sha256 hasher;
 
-    while (true) {
-        stream.read(reinterpret_cast<char*>(buffer.data()),
-                    static_cast<std::streamsize>(buffer.size()));
-        const auto count = stream.gcount();
-        if (count > 0) {
-            const auto bytes_read = static_cast<std::size_t>(count);
-            if (checked_add_exceeds(result.object_size, bytes_read,
-                                    limits.max_object_size)) {
-                result.status = Status::resource_limit;
+        while (true) {
+            stream.read(reinterpret_cast<char*>(buffer.data()),
+                        static_cast<std::streamsize>(buffer.size()));
+            const auto count = stream.gcount();
+            if (count > 0) {
+                const auto bytes_read = static_cast<std::size_t>(count);
+                if (checked_add_exceeds(result.object_size, bytes_read,
+                                        limits.max_object_size)) {
+                    result.status = Status::resource_limit;
+                    return result;
+                }
+                result.object_size += static_cast<std::uint64_t>(bytes_read);
+                if (hasher.update(
+                        std::span<const std::byte>(buffer.data(), bytes_read)) !=
+                    Status::ok) {
+                    result.status = Status::resource_limit;
+                    return result;
+                }
+            }
+
+            if (stream.eof()) {
+                break;
+            }
+            if (!stream.good()) {
+                result.status = Status::io;
                 return result;
             }
-            result.object_size += static_cast<std::uint64_t>(bytes_read);
-            if (hasher.update(std::span<const std::byte>(buffer.data(), bytes_read)) !=
-                Status::ok) {
-                result.status = Status::resource_limit;
-                return result;
-            }
         }
 
-        if (stream.eof()) {
-            break;
-        }
-        if (!stream.good()) {
-            result.status = Status::io;
-            return result;
-        }
+        result.status = hasher.finalize(result.sha256);
+        return result;
+    } catch (const std::bad_alloc&) {
+        result.status = Status::resource_limit;
+        return result;
     }
-
-    result.status = hasher.finalize(result.sha256);
-    return result;
 }
 
 Status verify_object_file(const std::filesystem::path& path,
@@ -189,36 +196,42 @@ Status AtomicObjectWriter::open(const std::filesystem::path& output_root,
         return Status::invalid_argument;
     }
 
-    std::error_code error;
-    if (!std::filesystem::is_directory(output_root, error) || error) {
-        return Status::io;
-    }
+    try {
+        std::error_code error;
+        if (!std::filesystem::is_directory(output_root, error) || error) {
+            return Status::io;
+        }
 
-    const auto safe_name = sanitize_display_name(display_name);
-    writer.final_path_ = output_root / safe_name;
-    if (std::filesystem::exists(writer.final_path_, error) || error) {
+        const auto safe_name = sanitize_display_name(display_name);
+        writer.final_path_ = output_root / safe_name;
+        if (std::filesystem::exists(writer.final_path_, error) || error) {
+            writer.final_path_.clear();
+            return Status::io;
+        }
+
+        for (unsigned int attempt = 0U; attempt < 8U; ++attempt) {
+            writer.temporary_path_ = make_temporary_path(output_root, safe_name);
+            if (std::filesystem::exists(writer.temporary_path_, error)) {
+                continue;
+            }
+            writer.stream_.open(
+                writer.temporary_path_,
+                std::ios::binary | std::ios::out | std::ios::trunc);
+            if (writer.stream_.is_open()) {
+                writer.limits_ = limits;
+                writer.object_size_ = 0U;
+                writer.open_ = true;
+                return Status::ok;
+            }
+        }
+
         writer.final_path_.clear();
+        writer.temporary_path_.clear();
         return Status::io;
+    } catch (const std::bad_alloc&) {
+        writer.abort();
+        return Status::resource_limit;
     }
-
-    for (unsigned int attempt = 0U; attempt < 8U; ++attempt) {
-        writer.temporary_path_ = make_temporary_path(output_root, safe_name);
-        if (std::filesystem::exists(writer.temporary_path_, error)) {
-            continue;
-        }
-        writer.stream_.open(writer.temporary_path_,
-                            std::ios::binary | std::ios::out | std::ios::trunc);
-        if (writer.stream_.is_open()) {
-            writer.limits_ = limits;
-            writer.object_size_ = 0U;
-            writer.open_ = true;
-            return Status::ok;
-        }
-    }
-
-    writer.final_path_.clear();
-    writer.temporary_path_.clear();
-    return Status::io;
 }
 
 Status AtomicObjectWriter::write(const std::span<const std::byte> bytes) {
@@ -298,4 +311,3 @@ void AtomicObjectWriter::abort() noexcept {
 }
 
 }  // namespace glyph
-
