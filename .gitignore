@@ -1,0 +1,31 @@
+# CMake and local build output
+/build/
+/out/
+/cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+CTestTestfile.cmake
+Makefile
+cmake_install.cmake
+install_manifest.txt
+
+# IDE and editor state
+.vs/
+.vscode/
+*.user
+*.suo
+compile_commands.json
+CMakeUserPresets.json
+
+# Generated evidence and local captures
+/artifacts/
+/captures/
+/receipts/local/
+*.dmp
+*.log
+
+# Platform noise
+Thumbs.db
+Desktop.ini
+
+AGENTS.md
