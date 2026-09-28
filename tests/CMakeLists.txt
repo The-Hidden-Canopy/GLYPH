@@ -85,3 +85,46 @@ add_executable(glyph_rgb8_unit_tests
 target_link_libraries(glyph_rgb8_unit_tests PRIVATE glyph::core)
 
 add_test(NAME glyph.rgb8.unit COMMAND glyph_rgb8_unit_tests)
+
+add_executable(glyph_optical_surface_unit_tests
+    unit/test_optical_surface.cpp
+)
+
+target_link_libraries(glyph_optical_surface_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.optical_surface.unit COMMAND glyph_optical_surface_unit_tests)
+
+add_executable(glyph_c_api_unit_tests
+    unit/test_c_api.cpp
+)
+
+target_link_libraries(glyph_c_api_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.c_api.unit COMMAND glyph_c_api_unit_tests)
+
+add_executable(glyph_c_api_header_unit_tests
+    unit/test_c_api_header.c
+)
+
+target_include_directories(glyph_c_api_header_unit_tests
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+add_test(NAME glyph.c_api.header.unit COMMAND glyph_c_api_header_unit_tests)
+
+add_executable(glyph_png_unit_tests
+    unit/test_png.cpp
+)
+
+target_link_libraries(glyph_png_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.png.unit COMMAND glyph_png_unit_tests)
+
+add_executable(glyph_simulator_unit_tests
+    unit/test_simulator.cpp
+)
+
+target_link_libraries(glyph_simulator_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.simulator.unit COMMAND glyph_simulator_unit_tests)

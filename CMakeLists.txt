@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(glyph VERSION 0.1.0 LANGUAGES CXX)
+project(glyph VERSION 0.1.0 LANGUAGES CXX C)
 
 option(GLYPH_BUILD_TESTS "Build the GLYPH unit tests" ON)
 option(GLYPH_ENABLE_SANITIZERS
@@ -8,6 +8,7 @@ option(GLYPH_ENABLE_SANITIZERS
        OFF)
 
 add_library(glyph_core STATIC
+    src/c_api.cpp
     src/crypto/sha256.cpp
     src/core/status.cpp
     src/frame/crc32c.cpp
@@ -17,9 +18,12 @@ add_library(glyph_core STATIC
     src/fec/inner_reed_solomon.cpp
     src/frame/interleaver.cpp
     src/frame/tile_payload.cpp
+    src/image/png.cpp
     src/manifest/manifest.cpp
+    src/optical/surface.cpp
     src/phy/rgb8.cpp
     src/phy/rgb8_tile.cpp
+    src/sim/simulator.cpp
     src/transport/object_io.cpp
     src/transport/resume_journal.cpp
 )

@@ -29,6 +29,13 @@ The current CPU-portable core provides:
 - bounded systematic GF(256) erasure recovery for the M0 shard model;
 - shortened GF(256) inner byte ECC with bounded correction and erasure recovery;
 - RGB8 primary-channel symbol packing with confidence-to-erasure classification.
+- deterministic MP0 software surfaces with safe geometry, control/header cells,
+  anchors, pilots, calibration patches, and bounded payload placement;
+- a versioned C ABI slice with opaque surface-renderer handles and
+  caller-owned output buffers;
+- a dependency-free canonical RGBA8 PNG encoder/decoder for saved-frame
+  processing;
+- a seeded synthetic capture impairment slice with replay receipts;
 
 The manifest encoder/decoder currently uses `encryption = null` and an empty
 `extensions` map. Secure-profile fields, optical layout, calibration
@@ -62,12 +69,32 @@ optical, GPU, camera, media, throughput, or 100 MiB conformance claims.
 - `tests/` — unit/property/fuzz/conformance layers as they are implemented.
 - `vectors/` — deterministic manifests, frames, FEC, and crypto vectors.
 - `benchmarks/` — reproducible receipts, not unqualified performance claims.
+- `ui/mobile/` — dependency-free mobile-first interaction preview; synthetic
+  walkthroughs are explicitly not optical or conformance evidence.
+
+The first UI slice can be inspected locally with:
+
+```powershell
+python -m http.server 4173 --directory ui/mobile
+```
+
+Its contract checks run independently of the CMake build:
+
+```powershell
+node --test ui/mobile/contract.test.mjs
+```
 
 The current work-package decisions are documented in
 [WP-01 object layer](docs/design/WP-01-object-layer.md) and
 [WP-02 frame codec](docs/design/WP-02-frame-codec.md), plus
 [WP-03 inner/outer bounded FEC](docs/design/WP-03-fec.md), and
-[WP-04 RGB8 symbols](docs/design/WP-04-rgb8-symbols.md).
+[WP-04 RGB8 symbols](docs/design/WP-04-rgb8-symbols.md),
+[WP-05 deterministic optical surface](docs/design/WP-05-optical-surface.md),
+and the [C ABI surface boundary](docs/design/C-ABI-surface.md).
+[The canonical PNG boundary](docs/design/WP-06-png.md) documents the
+saved-frame image contract.
+[The synthetic simulator](docs/design/WP-07-simulator.md) documents the
+current S1 evidence boundary.
 
 ## Non-negotiable completion rule
 

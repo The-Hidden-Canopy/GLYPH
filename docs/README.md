@@ -6,6 +6,10 @@
 - [WP-02: frame codec](design/WP-02-frame-codec.md)
 - [WP-03: bounded FEC](design/WP-03-fec.md)
 - [WP-04: RGB8 symbols](design/WP-04-rgb8-symbols.md)
+- [WP-05: deterministic MP0 optical surface](design/WP-05-optical-surface.md)
+- [C ABI: MP0 surface renderer](design/C-ABI-surface.md)
+- [Canonical RGBA8 PNG boundary](design/WP-06-png.md)
+- [Synthetic optical simulator](design/WP-07-simulator.md)
 - [Protocol artifacts](protocol/README.md)
 
 Normative protocol changes require an ADR or Glyph Enhancement Proposal with
