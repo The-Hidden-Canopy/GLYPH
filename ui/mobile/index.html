@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#091016">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="GLYPH mobile-first offline optical transport UI preview">
+  <title>GLYPH · Mobile Console</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">G</div>
+        <div>
+          <div class="brand-name">GLYPH</div>
+          <div class="brand-subtitle">offline optical transport</div>
+        </div>
+      </div>
+      <div class="topbar-status" aria-label="Application boundaries">
+        <span class="status-chip status-chip--quiet"><span class="status-dot"></span>OFFLINE ONLY</span>
+        <span id="evidence-badge" class="status-chip status-chip--synthetic">UI PREVIEW</span>
+      </div>
+    </header>
+
+    <main class="content" id="main-content">
+      <section class="screen-heading" aria-labelledby="mode-title">
+        <div>
+          <p class="eyebrow" id="mode-kicker">LOCAL SESSION</p>
+          <h1 id="mode-title">Send an object</h1>
+          <p class="screen-description" id="mode-description">
+            Hash a local file, then hold this screen toward a receiving camera.
+          </p>
+        </div>
+        <div class="session-pill" id="session-pill" aria-live="polite">
+          <span class="status-dot"></span><span id="session-state">IDLE</span>
+        </div>
+      </section>
+
+      <section class="boundary-banner" aria-label="Evidence boundary">
+        <div class="boundary-icon" aria-hidden="true">i</div>
+        <div>
+          <strong id="boundary-title">Preview boundary</strong>
+          <p id="boundary-text">No camera, display backend, or transfer session is connected. Preview actions stay local and are labelled synthetic.</p>
+        </div>
+      </section>
+
+      <section class="view" id="send-view" aria-labelledby="send-view-title">
+        <div class="workspace-grid">
+          <article class="surface-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">SENDER SURFACE</p>
+                <h2 id="send-view-title">Optical field</h2>
+              </div>
+              <span class="micro-badge" id="surface-badge">NOT ACTIVE</span>
+            </div>
+
+            <div class="optical-stage" id="optical-stage" aria-label="Synthetic optical surface preview">
+              <div class="surface-empty" id="surface-empty">
+                <span class="surface-empty-mark" aria-hidden="true">◇</span>
+                <strong>Ready for a local object</strong>
+                <span>The optical field appears only after an explicit preview action.</span>
+              </div>
+              <div class="surface-frame" id="surface-frame" hidden>
+                <div class="surface-anchor surface-anchor--tl" aria-hidden="true"></div>
+                <div class="surface-anchor surface-anchor--tr" aria-hidden="true"></div>
+                <div class="surface-anchor surface-anchor--bl" aria-hidden="true"></div>
+                <div class="surface-anchor surface-anchor--br" aria-hidden="true"></div>
+                <div class="surface-control surface-control--top" aria-hidden="true">
+                  <span>GLYPH</span><span id="surface-profile">MP0</span><span id="surface-seq">FRAME —</span>
+                </div>
+                <div class="surface-grid" id="surface-grid" aria-hidden="true"></div>
+                <div class="surface-pilots" aria-hidden="true">
+                  <span class="pilot pilot--black"></span>
+                  <span class="pilot pilot--red"></span>
+                  <span class="pilot pilot--green"></span>
+                  <span class="pilot pilot--blue"></span>
+                  <span class="pilot pilot--white"></span>
+                </div>
+                <div class="surface-control surface-control--bottom" aria-hidden="true">
+                  <span id="surface-state">SYNTHETIC SURFACE PREVIEW</span><span>RGB8</span>
+                </div>
+                <div class="surface-watermark">PREVIEW · NOT A LIVE TRANSMISSION</div>
+              </div>
+            </div>
+
+            <div class="surface-footer">
+              <div>
+                <span class="label">PROFILE</span>
+                <strong id="profile-label">MP0 · Robust Mobile Bootstrap</strong>
+              </div>
+              <div class="surface-actions">
+                <button class="button button--secondary" id="pause-preview" type="button" disabled>Pause</button>
+                <button class="button button--danger" id="cancel-preview" type="button" disabled>Cancel</button>
+              </div>
+            </div>
+          </article>
+
+          <aside class="side-stack" aria-label="Sender details">
+            <article class="panel-card">
+              <div class="card-header card-header--compact">
+                <div>
+                  <p class="eyebrow">OBJECT</p>
+                  <h2>Local file</h2>
+                </div>
+                <span class="micro-badge" id="object-badge">NOT SELECTED</span>
+              </div>
+              <input id="file-input" type="file" hidden>
+              <button class="file-picker" id="choose-file" type="button">
+                <span class="file-picker-icon" aria-hidden="true">＋</span>
+                <span>
+                  <strong>Choose a local file</strong>
+                  <small>Nothing leaves this browser preview.</small>
+                </span>
+              </button>
+              <div class="object-details" id="object-details" hidden>
+                <div class="detail-row"><span>Name</span><strong id="object-name">—</strong></div>
+                <div class="detail-row"><span>Size</span><strong id="object-size">—</strong></div>
+                <div class="detail-row detail-row--stacked"><span>SHA-256</span><code id="object-hash">—</code></div>
+                <p class="inline-status" id="hash-status" role="status">Hash not computed.</p>
+              </div>
+              <div class="button-row button-row--stacked">
+                <button class="button button--primary" id="start-send" type="button" disabled>Start native sender</button>
+                <button class="button button--secondary" id="run-synthetic-send" type="button">Run synthetic preview</button>
+              </div>
+              <p class="helper-text">The native sender is not attached to this preview. A synthetic walkthrough cannot produce a verified transfer.</p>
+            </article>
+
+            <article class="panel-card metric-card">
+              <div class="card-header card-header--compact">
+                <div>
+                  <p class="eyebrow">TRANSFER SUMMARY</p>
+                  <h2>Evidence, not vibes</h2>
+                </div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric"><span>Verified bytes</span><strong id="send-verified">—</strong></div>
+                <div class="metric"><span>Expected bytes</span><strong id="send-expected">—</strong></div>
+                <div class="metric"><span>Frames accepted</span><strong id="send-accepted">—</strong></div>
+                <div class="metric"><span>Frames rejected</span><strong id="send-rejected">—</strong></div>
+              </div>
+              <div class="progress-track" aria-label="Transfer progress">
+                <span id="send-progress-bar" style="width: 0%"></span>
+              </div>
+              <p class="progress-label" id="send-progress-label">No transfer session.</p>
+            </article>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="receive-view" hidden aria-labelledby="receive-view-title">
+        <div class="workspace-grid">
+          <article class="surface-card">
+            <div class="card-header">
+              <div>
+                <p class="eyebrow">RECEIVER CAMERA</p>
+                <h2 id="receive-view-title">Find a GLYPH surface</h2>
+              </div>
+              <span class="micro-badge" id="camera-badge">NOT CONNECTED</span>
+            </div>
+            <div class="camera-stage" id="camera-stage">
+              <video id="camera-preview" autoplay muted playsinline hidden></video>
+              <div class="camera-placeholder" id="camera-placeholder">
+                <span class="camera-mark" aria-hidden="true">◎</span>
+                <strong>Camera access is off</strong>
+                <span>Enable it only when you are ready to receive.</span>
+              </div>
+              <div class="scan-overlay" id="scan-overlay" hidden>
+                <div class="scan-corner scan-corner--tl"></div>
+                <div class="scan-corner scan-corner--tr"></div>
+                <div class="scan-corner scan-corner--bl"></div>
+                <div class="scan-corner scan-corner--br"></div>
+                <div class="scan-label" id="scan-label">CAMERA PREVIEW · DECODER UNAVAILABLE</div>
+              </div>
+            </div>
+            <div class="guidance-row">
+              <span class="guidance-icon" aria-hidden="true">↗</span>
+              <strong id="receive-guidance">Point the rear camera at the sending screen.</strong>
+            </div>
+            <div class="button-row">
+              <button class="button button--primary" id="enable-camera" type="button">Enable camera</button>
+              <button class="button button--secondary" id="stop-camera" type="button" disabled>Stop camera</button>
+              <button class="button button--secondary" id="run-synthetic-receive" type="button">Run synthetic path</button>
+            </div>
+          </article>
+
+          <aside class="side-stack" aria-label="Receiver details">
+            <article class="panel-card">
+              <div class="card-header card-header--compact">
+                <div>
+                  <p class="eyebrow">QUALITY GATE</p>
+                  <h2>Acceptance conditions</h2>
+                </div>
+              </div>
+              <div class="quality-list">
+                <div class="quality-row"><span>Surface found</span><strong id="quality-surface">—</strong></div>
+                <div class="quality-row"><span>Geometry</span><strong id="quality-geometry">—</strong></div>
+                <div class="quality-row"><span>Calibration</span><strong id="quality-calibration">—</strong></div>
+                <div class="quality-row"><span>Payload acceptance</span><strong id="quality-payload">—</strong></div>
+                <div class="quality-row"><span>Final hash</span><strong id="quality-hash">REQUIRED</strong></div>
+              </div>
+              <p class="helper-text">A camera preview is not a decoder result. No frame becomes payload-bearing until geometry and calibration pass.</p>
+            </article>
+
+            <article class="panel-card metric-card">
+              <div class="card-header card-header--compact">
+                <div>
+                  <p class="eyebrow">RECEIVE SUMMARY</p>
+                  <h2>Local diagnostics</h2>
+                </div>
+              </div>
+              <div class="metric-grid">
+                <div class="metric"><span>Tiles accepted</span><strong id="receive-accepted">—</strong></div>
+                <div class="metric"><span>Tiles erased</span><strong id="receive-erased">—</strong></div>
+                <div class="metric"><span>Blocks verified</span><strong id="receive-blocks">—</strong></div>
+                <div class="metric"><span>Resume state</span><strong id="receive-resume">NONE</strong></div>
+              </div>
+              <div class="progress-track" aria-label="Receive progress">
+                <span id="receive-progress-bar" style="width: 0%"></span>
+              </div>
+              <p class="progress-label" id="receive-progress-label">No receive session.</p>
+            </article>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="transfers-view" hidden aria-labelledby="transfers-view-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LOCAL JOURNAL</p>
+            <h2 id="transfers-view-title">Transfers</h2>
+          </div>
+          <span class="micro-badge" id="transfer-count">0 SESSIONS</span>
+        </div>
+        <div class="transfer-list" id="transfer-list">
+          <div class="empty-state"><span aria-hidden="true">⌁</span><strong>No local transfer sessions</strong><p>Interrupted or synthetic sessions will appear here. Unverified bytes are never presented as complete.</p></div>
+        </div>
+      </section>
+
+      <section class="view" id="settings-view" hidden aria-labelledby="settings-view-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">SAFE OPERATION</p>
+            <h2 id="settings-view-title">Settings</h2>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <article class="panel-card">
+            <div class="card-header card-header--compact"><div><p class="eyebrow">MOBILE PROFILE</p><h2>Start conservatively</h2></div></div>
+            <label class="setting-row" for="profile-select"><span><strong>Profile</strong><small>MP0 is the robust bootstrap profile.</small></span><select id="profile-select"><option value="MP0">MP0 · Robust</option><option value="MP1">MP1 · Standard</option></select></label>
+            <div class="setting-row setting-row--static"><span><strong>Transport</strong><small>No network, account, or pairing broker.</small></span><span class="setting-value">LOCAL ONLY</span></div>
+            <div class="setting-row setting-row--static"><span><strong>Telemetry</strong><small>Camera frames and objects stay local.</small></span><span class="setting-value">OFF</span></div>
+          </article>
+          <article class="panel-card">
+            <div class="card-header card-header--compact"><div><p class="eyebrow">ACCESSIBILITY</p><h2>Keep the surface safe</h2></div></div>
+            <label class="toggle-row" for="reduced-motion"><span><strong>Reduce motion</strong><small>Limit UI transitions around the optical field.</small></span><input id="reduced-motion" type="checkbox"><span class="toggle" aria-hidden="true"></span></label>
+            <div class="warning-box"><strong>Brightness and flicker</strong><p>Use stable brightness. GLYPH should avoid deliberate full-screen luminance modulation.</p></div>
+            <div class="setting-row setting-row--static"><span><strong>Received files</strong><small>Never auto-open or execute.</small></span><span class="setting-value">BLOCKED</span></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="event-strip" aria-live="polite" aria-label="Session events">
+        <div class="event-strip-title"><span class="status-dot"></span>LOCAL EVENTS</div>
+        <ol class="event-list" id="event-list">
+          <li><time>—</time><span>Waiting for an explicit local action.</span></li>
+        </ol>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Primary">
+      <button class="nav-button is-active" type="button" data-mode="send"><span aria-hidden="true">↑</span><span>Send</span></button>
+      <button class="nav-button" type="button" data-mode="receive"><span aria-hidden="true">◎</span><span>Receive</span></button>
+      <button class="nav-button" type="button" data-mode="transfers"><span aria-hidden="true">≋</span><span>Transfers</span></button>
+      <button class="nav-button" type="button" data-mode="settings"><span aria-hidden="true">⋯</span><span>Settings</span></button>
+    </nav>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
