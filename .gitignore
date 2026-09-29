@@ -1,3 +1,5 @@
+AGENTS.md
+
 # CMake and local build output
 /build/
 /out/
@@ -8,26 +10,89 @@ CTestTestfile.cmake
 Makefile
 cmake_install.cmake
 install_manifest.txt
+compile_commands.json
+CMakeUserPresets.json
+.ninja_deps
+.ninja_log
+.ninja_lock
+build.ninja
 
 # IDE and editor state
 .vs/
 .vscode/
+.idea/
 *.user
 *.suo
-compile_commands.json
-CMakeUserPresets.json
+*.swp
+*~
+*.bak
+*.orig
+*.rej
 
-# Generated evidence and local captures
+# Local dependencies, test caches, and generated coverage
+node_modules/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage/
+dist/
+
+# Local evidence, captures, and runtime output
 /artifacts/
 /captures/
 /receipts/local/
-*.dmp
 *.log
+*.dmp
+*.stackdump
+*.tmp
+*.temp
+
+# Credentials and private local configuration
+.env
+.env.*
+!.env.example
+!.env.template
+*.secret
+*.secrets
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.kdbx
+*.tfstate
+*.tfstate.*
+credentials*.json
+credentials*.yml
+credentials*.yaml
+secrets*.json
+secrets*.yml
+secrets*.yaml
+service-account*.json
+client_secret*.json
+oauth*.json
+.npmrc
+.pypirc
+.netrc
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+config.local.*
+
+# Local databases and caches
+*.sqlite
+*.sqlite3
+*.db
+
+# Codex and other local attachment state
+.codex/
+.codex-remote-attachments/
 
 # Platform noise
 Thumbs.db
 Desktop.ini
-
-AGENTS.md
-*.md
-*.md
+.DS_Store
