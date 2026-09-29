@@ -5,8 +5,13 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace {
@@ -43,6 +48,21 @@ std::array<std::uint8_t, GLYPH_FRAME_HEADER_BYTES> make_header(
         result[index] = std::to_integer<std::uint8_t>(encoded[index]);
     }
     return result;
+}
+
+std::filesystem::path make_session_root() {
+    const auto base = std::filesystem::temp_directory_path();
+    const auto ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (unsigned int attempt = 0U; attempt < 16U; ++attempt) {
+        const auto candidate =
+            base / ("glyph-c-api-session-" + std::to_string(ticks) + "-" +
+                    std::to_string(attempt));
+        std::error_code error;
+        if (std::filesystem::create_directory(candidate, error) && !error) {
+            return candidate;
+        }
+    }
+    return {};
 }
 
 }  // namespace
@@ -153,5 +173,160 @@ int main() {
     assert(output.hold_index == 4U);
 
     glyph_mp0_renderer_destroy(renderer);
+
+    const std::string session_object_text = "C ABI logical session object\n";
+    const glyph_byte_span_t session_object{
+        reinterpret_cast<const std::uint8_t*>(session_object_text.data()),
+        session_object_text.size()};
+    const std::string display_name = "c-api-session.bin";
+    const std::string fec_profile = "RS32+8";
+    glyph_sender_config_t sender_config{};
+    sender_config.struct_size = sizeof(glyph_sender_config_t);
+    sender_config.abi_version = GLYPH_C_ABI_VERSION;
+    sender_config.transfer_id[0] = 0x21U;
+    sender_config.block_size = 5U;
+    sender_config.shard_size = 5U;
+    sender_config.display_name =
+        glyph_utf8_span_t{display_name.data(), display_name.size()};
+    sender_config.fec_profile =
+        glyph_utf8_span_t{fec_profile.data(), fec_profile.size()};
+    sender_config.max_object_size = 1U << 20U;
+
+    glyph_sender_t* sender = nullptr;
+    assert(glyph_sender_create(&session_object, &sender_config, &sender) ==
+           GLYPH_STATUS_OK);
+    assert(glyph_sender_state(sender) == GLYPH_SENDER_IDLE);
+    assert(glyph_sender_prepare(sender) == GLYPH_STATUS_OK);
+    assert(glyph_sender_state(sender) == GLYPH_SENDER_MANIFEST_READY);
+    assert(glyph_sender_begin_bootstrap(sender) == GLYPH_STATUS_OK);
+
+    std::uint64_t manifest_bytes = 0U;
+    assert(glyph_sender_get_manifest(sender, nullptr, 0U, &manifest_bytes) ==
+           GLYPH_STATUS_RESOURCE_LIMIT);
+    assert(manifest_bytes != 0U);
+    std::vector<std::uint8_t> manifest(manifest_bytes);
+    assert(glyph_sender_get_manifest(sender, manifest.data(), manifest.size(),
+                                     &manifest_bytes) == GLYPH_STATUS_OK);
+
+    const auto session_root = make_session_root();
+    assert(!session_root.empty());
+    const auto source_path = session_root / "c-api-source.bin";
+    {
+        std::ofstream source(source_path, std::ios::binary | std::ios::trunc);
+        assert(source.is_open());
+        source.write(session_object_text.data(),
+                     static_cast<std::streamsize>(session_object_text.size()));
+        assert(source.good());
+    }
+    const auto source_path_string = source_path.string();
+    auto file_sender_config = sender_config;
+    file_sender_config.transfer_id[0] = 0x22U;
+    glyph_sender_t* file_sender = nullptr;
+    const glyph_utf8_span_t source_path_span{
+        source_path_string.data(), source_path_string.size()};
+    assert(glyph_sender_open_file(&source_path_span, &file_sender_config,
+                                  &file_sender) == GLYPH_STATUS_OK);
+    assert(glyph_sender_state(file_sender) == GLYPH_SENDER_IDLE);
+    assert(glyph_sender_prepare(file_sender) == GLYPH_STATUS_OK);
+    assert(glyph_sender_state(file_sender) == GLYPH_SENDER_MANIFEST_READY);
+    glyph_sender_destroy(file_sender);
+
+    const auto session_root_string = session_root.string();
+    const auto journal_path = session_root / "session.glj";
+    const auto journal_path_string = journal_path.string();
+    glyph_receiver_config_t receiver_config{};
+    receiver_config.struct_size = sizeof(glyph_receiver_config_t);
+    receiver_config.abi_version = GLYPH_C_ABI_VERSION;
+    receiver_config.output_root = glyph_utf8_span_t{
+        session_root_string.data(), session_root_string.size()};
+    receiver_config.journal_path = glyph_utf8_span_t{
+        journal_path_string.data(), journal_path_string.size()};
+    receiver_config.supported_fec_profile =
+        glyph_utf8_span_t{fec_profile.data(), fec_profile.size()};
+    receiver_config.max_object_size = 1U << 20U;
+
+    glyph_receiver_t* receiver = nullptr;
+    assert(glyph_receiver_create(&receiver_config, &receiver) ==
+           GLYPH_STATUS_OK);
+    assert(glyph_receiver_state(receiver) == GLYPH_RECEIVER_IDLE);
+    assert(glyph_receiver_begin_search(receiver) == GLYPH_STATUS_OK);
+    assert(glyph_receiver_notify_surface_found(receiver) == GLYPH_STATUS_OK);
+    assert(glyph_receiver_notify_calibrated(receiver) == GLYPH_STATUS_OK);
+    const glyph_byte_span_t manifest_span{manifest.data(), manifest.size()};
+    assert(glyph_receiver_submit_manifest(receiver, &manifest_span) ==
+           GLYPH_STATUS_OK);
+
+    std::vector<std::uint8_t> block(5U);
+    bool paused = false;
+    for (;;) {
+        std::uint32_t block_id = 0U;
+        std::uint64_t bytes_written = 0U;
+        std::uint32_t available = 0U;
+        assert(glyph_sender_next_block(
+                   sender, &block_id, block.data(), block.size(),
+                   &bytes_written, &available) == GLYPH_STATUS_OK);
+        if (available == 0U) {
+            break;
+        }
+        const glyph_byte_span_t block_span{block.data(), bytes_written};
+        if (!paused) {
+            assert(glyph_receiver_submit_block(receiver, block_id + 1U,
+                                               &block_span) ==
+                   GLYPH_STATUS_INVALID_ARGUMENT);
+            assert(glyph_receiver_submit_block(receiver, block_id,
+                                               &block_span) == GLYPH_STATUS_OK);
+            assert(glyph_receiver_pause(receiver) == GLYPH_STATUS_OK);
+            assert(glyph_receiver_state(receiver) == GLYPH_RECEIVER_PAUSED);
+            glyph_receiver_destroy(receiver);
+            receiver = nullptr;
+            assert(glyph_receiver_create(&receiver_config, &receiver) ==
+                   GLYPH_STATUS_OK);
+            assert(glyph_receiver_begin_search(receiver) == GLYPH_STATUS_OK);
+            assert(glyph_receiver_notify_surface_found(receiver) ==
+                   GLYPH_STATUS_OK);
+            assert(glyph_receiver_notify_calibrated(receiver) ==
+                   GLYPH_STATUS_OK);
+            assert(glyph_receiver_submit_manifest(receiver, &manifest_span) ==
+                   GLYPH_STATUS_OK);
+            paused = true;
+        } else {
+            assert(glyph_receiver_submit_block(receiver, block_id,
+                                               &block_span) == GLYPH_STATUS_OK);
+        }
+    }
+    assert(paused);
+    assert(glyph_sender_state(sender) == GLYPH_SENDER_FINAL_REPEAT);
+    assert(glyph_sender_complete_final_repeat(sender) == GLYPH_STATUS_OK);
+    assert(glyph_sender_state(sender) == GLYPH_SENDER_DONE);
+    std::uint64_t received_progress = 0U;
+    assert(glyph_receiver_get_progress(receiver, &received_progress) ==
+           GLYPH_STATUS_OK);
+    assert(received_progress == session_object.size);
+    assert(glyph_receiver_finalize(receiver) == GLYPH_STATUS_OK);
+    assert(glyph_receiver_state(receiver) == GLYPH_RECEIVER_COMPLETE);
+
+    std::uint64_t required_path_bytes = 0U;
+    assert(glyph_receiver_get_final_path(receiver, nullptr, 0U,
+                                         &required_path_bytes) ==
+           GLYPH_STATUS_RESOURCE_LIMIT);
+    assert(required_path_bytes > 1U);
+    std::vector<char> final_path(required_path_bytes);
+    assert(glyph_receiver_get_final_path(receiver, final_path.data(),
+                                         final_path.size(),
+                                         &required_path_bytes) ==
+           GLYPH_STATUS_OK);
+    std::ifstream received(final_path.data(), std::ios::binary);
+    assert(received.is_open());
+    const std::vector<char> received_bytes{
+        std::istreambuf_iterator<char>(received), std::istreambuf_iterator<char>()};
+    assert(received_bytes == std::vector<char>(session_object_text.begin(),
+                                               session_object_text.end()));
+    received.close();
+
+    glyph_receiver_destroy(receiver);
+    glyph_sender_destroy(sender);
+    std::error_code session_cleanup_error;
+    std::filesystem::remove_all(session_root, session_cleanup_error);
+    assert(!session_cleanup_error);
     return 0;
 }

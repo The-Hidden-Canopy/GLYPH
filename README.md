@@ -32,10 +32,24 @@ The current CPU-portable core provides:
 - deterministic MP0 software surfaces with safe geometry, control/header cells,
   anchors, pilots, calibration patches, and bounded payload placement;
 - a versioned C ABI slice with opaque surface-renderer handles and
-  caller-owned output buffers;
+  caller-owned output buffers plus logical sender/receiver session handles;
 - a dependency-free canonical RGBA8 PNG encoder/decoder for saved-frame
   processing;
 - a seeded synthetic capture impairment slice with replay receipts;
+- a logical sender/receiver session state machine with atomic final
+  verification and identity-bound journaling;
+- a bounded local-file sender path that hashes the source before manifest
+  emission, re-hashes emitted bytes before final repeat, and rejects changed
+  bytes;
+- a native durable checkpoint before resumable receiver receipts are persisted;
+- a strict one-tile MP0 frame loopback joining tile ECC, RGB8 cells,
+  canonical surfaces, and saved-PNG recovery;
+- a bounded outer-FEC group assembler with reorder, duplicate, and
+  conflicting-shard handling;
+- a deterministic synthetic loopback composing FEC, MP0, PNG, tile recovery,
+  and exact block reconstruction;
+- a multi-block synthetic session loopback that drives recovered blocks through
+  durable journaling and atomic whole-object promotion;
 
 The manifest encoder/decoder currently uses `encryption = null` and an empty
 `extensions` map. Secure-profile fields, optical layout, calibration
@@ -90,11 +104,15 @@ The current work-package decisions are documented in
 [WP-03 inner/outer bounded FEC](docs/design/WP-03-fec.md), and
 [WP-04 RGB8 symbols](docs/design/WP-04-rgb8-symbols.md),
 [WP-05 deterministic optical surface](docs/design/WP-05-optical-surface.md),
-and the [C ABI surface boundary](docs/design/C-ABI-surface.md).
+and the [C ABI surface and session boundary](docs/design/C-ABI-surface.md).
 [The canonical PNG boundary](docs/design/WP-06-png.md) documents the
 saved-frame image contract.
 [The synthetic simulator](docs/design/WP-07-simulator.md) documents the
 current S1 evidence boundary.
+[The logical session](docs/design/WP-09-session.md) documents the current
+offline block-orchestration boundary.
+[The synthetic session loopback](docs/design/WP-13-synthetic-session-loopback.md)
+documents the multi-block composition boundary.
 
 ## Non-negotiable completion rule
 

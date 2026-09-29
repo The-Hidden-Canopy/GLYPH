@@ -1,6 +1,7 @@
 #include "glyph/transport/resume_journal.hpp"
 
 #include "glyph/frame/crc32c.hpp"
+#include "secure_file.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,12 +14,13 @@
 namespace glyph {
 namespace {
 
-constexpr std::array<std::uint8_t, 4> kMagic{'G', 'L', 'J', '1'};
-constexpr std::uint16_t kVersion = 1U;
+constexpr std::array<std::uint8_t, 4> kMagic{'G', 'L', 'J', '2'};
+constexpr std::uint16_t kVersion = 2U;
 constexpr std::uint16_t kHeaderBytes = 100U;
 constexpr std::uint32_t kMaxRecordPayloadBytes = 4U;
 constexpr std::uint8_t kShardRecord = 1U;
 constexpr std::uint8_t kBlockRecord = 2U;
+constexpr std::uint8_t kCompleteRecord = 3U;
 
 constexpr std::size_t kHeaderCrcOffset = 96U;
 
@@ -252,6 +254,16 @@ Status apply_record(const std::uint8_t type,
                     const std::span<const std::byte> payload,
                     const ResumeJournalLimits& limits,
                     ResumeJournalState& state) {
+    if (type == kCompleteRecord) {
+        if (!payload.empty()) {
+            return Status::protocol;
+        }
+        state.completed = true;
+        return Status::ok;
+    }
+    if (state.completed) {
+        return Status::integrity;
+    }
     if (type == kShardRecord) {
         if (payload.size() != 4U) {
             return Status::protocol;
@@ -286,16 +298,15 @@ Status apply_record(const std::uint8_t type,
     return Status::protocol;
 }
 
-Status read_existing(const std::filesystem::path& path,
+Status read_existing(detail::SecureFile& file,
                      const ResumeJournalIdentity& identity,
                      const ResumeJournalLimits& limits,
                      ResumeJournalState& state,
                      std::uint64_t& valid_bytes,
                      std::uint64_t& file_bytes) {
-    std::error_code error;
-    file_bytes = std::filesystem::file_size(path, error);
-    if (error) {
-        return Status::io;
+    const auto size_status = file.size(file_bytes);
+    if (size_status != Status::ok) {
+        return size_status;
     }
     if (file_bytes < kHeaderBytes) {
         return Status::integrity;
@@ -305,16 +316,10 @@ Status read_existing(const std::filesystem::path& path,
     }
 
     try {
-        std::vector<std::byte> bytes(static_cast<std::size_t>(file_bytes));
-        std::ifstream stream(path, std::ios::binary);
-        if (!stream.is_open()) {
-            return Status::io;
-        }
-        stream.read(reinterpret_cast<char*>(bytes.data()),
-                    static_cast<std::streamsize>(bytes.size()));
-        if (stream.gcount() != static_cast<std::streamsize>(bytes.size()) ||
-            !stream.good()) {
-            return Status::io;
+        std::vector<std::byte> bytes;
+        const auto read_status = file.read_all(bytes, limits.max_journal_bytes);
+        if (read_status != Status::ok) {
+            return read_status;
         }
 
         ResumeJournalIdentity actual;
@@ -383,6 +388,40 @@ ResumeJournal::~ResumeJournal() {
     close();
 }
 
+ResumeJournal::ResumeJournal() noexcept = default;
+
+ResumeJournal::ResumeJournal(ResumeJournal&& other) noexcept
+    : file_(std::move(other.file_)),
+      path_(std::move(other.path_)),
+      limits_(other.limits_),
+      state_(std::move(other.state_)),
+      journal_bytes_(other.journal_bytes_),
+      open_(other.open_) {
+    other.path_.clear();
+    other.limits_ = {};
+    other.state_ = {};
+    other.journal_bytes_ = 0U;
+    other.open_ = false;
+}
+
+ResumeJournal& ResumeJournal::operator=(ResumeJournal&& other) noexcept {
+    if (this != &other) {
+        close();
+        file_ = std::move(other.file_);
+        path_ = std::move(other.path_);
+        limits_ = other.limits_;
+        state_ = std::move(other.state_);
+        journal_bytes_ = other.journal_bytes_;
+        open_ = other.open_;
+        other.path_.clear();
+        other.limits_ = {};
+        other.state_ = {};
+        other.journal_bytes_ = 0U;
+        other.open_ = false;
+    }
+    return *this;
+}
+
 Status ResumeJournal::open(const std::filesystem::path& path,
                            const ResumeJournalIdentity& identity,
                            const ResumeJournalLimits& limits,
@@ -412,41 +451,83 @@ Status ResumeJournal::open(const std::filesystem::path& path,
         if (error) {
             return Status::io;
         }
+        candidate.file_ = std::make_unique<detail::SecureFile>();
         if (exists) {
             std::uint64_t valid_bytes = 0U;
             std::uint64_t file_bytes = 0U;
-            const auto status = read_existing(path, identity, limits,
-                                               candidate.state_, valid_bytes,
-                                               file_bytes);
+            const auto open_status = detail::SecureFile::open_rw(
+                path, *candidate.file_);
+            if (open_status != Status::ok) {
+                return open_status;
+            }
+            const auto lock_status = candidate.file_->lock_exclusive();
+            if (lock_status != Status::ok) {
+                return lock_status;
+            }
+            const auto status = read_existing(*candidate.file_, identity, limits,
+                                              candidate.state_, valid_bytes,
+                                              file_bytes);
             if (status != Status::ok) {
                 return status;
             }
             if (valid_bytes < file_bytes) {
-                std::filesystem::resize_file(path, valid_bytes, error);
-                if (error) {
-                    return Status::io;
+                const auto truncate_status = candidate.file_->truncate(valid_bytes);
+                if (truncate_status != Status::ok) {
+                    return truncate_status;
+                }
+                const auto sync_status = candidate.file_->synchronize();
+                if (sync_status != Status::ok) {
+                    return sync_status;
                 }
             }
             candidate.journal_bytes_ = valid_bytes;
         } else {
             const auto header = encode_header(identity);
-            std::ofstream stream(path, std::ios::binary | std::ios::out |
-                                           std::ios::trunc);
-            if (!stream.is_open()) {
-                return Status::io;
+            auto create_status = detail::SecureFile::create_new(
+                path, *candidate.file_);
+            if (create_status != Status::ok) {
+                // A concurrent opener may have won the CREATE_NEW race. Open
+                // that file through the same secure path and validate it.
+                create_status = detail::SecureFile::open_rw(
+                    path, *candidate.file_);
+                if (create_status != Status::ok) {
+                    return create_status;
+                }
+                const auto lock_status = candidate.file_->lock_exclusive();
+                if (lock_status != Status::ok) {
+                    return lock_status;
+                }
+                std::uint64_t valid_bytes = 0U;
+                std::uint64_t file_bytes = 0U;
+                const auto status = read_existing(
+                    *candidate.file_, identity, limits, candidate.state_,
+                    valid_bytes, file_bytes);
+                if (status != Status::ok) {
+                    return status;
+                }
+                if (valid_bytes < file_bytes) {
+                    if (candidate.file_->truncate(valid_bytes) != Status::ok ||
+                        candidate.file_->synchronize() != Status::ok) {
+                        return Status::io;
+                    }
+                }
+                candidate.journal_bytes_ = valid_bytes;
+                if (candidate.file_->seek_end() != Status::ok) {
+                    return Status::io;
+                }
+                candidate.open_ = true;
+                journal = std::move(candidate);
+                return Status::ok;
             }
-            stream.write(reinterpret_cast<const char*>(header.data()),
-                         static_cast<std::streamsize>(header.size()));
-            stream.flush();
-            if (!stream.good()) {
+            if (candidate.file_->lock_exclusive() != Status::ok ||
+                candidate.file_->write(header) != Status::ok ||
+                candidate.file_->synchronize() != Status::ok) {
                 return Status::io;
             }
             candidate.journal_bytes_ = header.size();
         }
-
-        candidate.stream_.open(path, std::ios::binary | std::ios::in |
-                                         std::ios::out | std::ios::app);
-        if (!candidate.stream_.is_open()) {
+        if (candidate.file_ == nullptr || !candidate.file_->is_open() ||
+            candidate.file_->seek_end() != Status::ok) {
             return Status::io;
         }
         candidate.open_ = true;
@@ -459,7 +540,7 @@ Status ResumeJournal::open(const std::filesystem::path& path,
 
 Status ResumeJournal::append_shard(const std::uint16_t fec_group,
                                    const std::uint16_t shard_index) {
-    if (!open_) {
+    if (!open_ || state_.completed) {
         return Status::invalid_argument;
     }
     const ResumeShardReceipt receipt{fec_group, shard_index};
@@ -484,11 +565,12 @@ Status ResumeJournal::append_shard(const std::uint16_t fec_group,
             next_size > limits_.max_journal_bytes) {
             return Status::resource_limit;
         }
-        stream_.write(reinterpret_cast<const char*>(record.data()),
-                      static_cast<std::streamsize>(record.size()));
-        stream_.flush();
-        if (!stream_.good()) {
+        if (file_ == nullptr || file_->write(record) != Status::ok) {
             return Status::io;
+        }
+        const auto sync_status = file_->synchronize();
+        if (sync_status != Status::ok) {
+            return sync_status;
         }
         state_.shard_receipts = std::move(candidate_receipts);
         journal_bytes_ = next_size;
@@ -499,7 +581,7 @@ Status ResumeJournal::append_shard(const std::uint16_t fec_group,
 }
 
 Status ResumeJournal::append_verified_block(const std::uint32_t block_id) {
-    if (!open_) {
+    if (!open_ || state_.completed) {
         return Status::invalid_argument;
     }
     if (contains_block(state_.verified_blocks, block_id)) {
@@ -527,13 +609,44 @@ Status ResumeJournal::append_verified_block(const std::uint32_t block_id) {
         if (range_status != Status::ok || !inserted) {
             return range_status;
         }
-        stream_.write(reinterpret_cast<const char*>(record.data()),
-                      static_cast<std::streamsize>(record.size()));
-        stream_.flush();
-        if (!stream_.good()) {
+        if (file_ == nullptr || file_->write(record) != Status::ok) {
             return Status::io;
         }
+        const auto sync_status = file_->synchronize();
+        if (sync_status != Status::ok) {
+            return sync_status;
+        }
         state_.verified_blocks = std::move(candidate_ranges);
+        journal_bytes_ = next_size;
+        return Status::ok;
+    } catch (const std::bad_alloc&) {
+        return Status::resource_limit;
+    }
+}
+
+Status ResumeJournal::append_complete() {
+    if (!open_) {
+        return Status::invalid_argument;
+    }
+    if (state_.completed) {
+        return Status::ok;
+    }
+
+    try {
+        const auto record = encode_record(kCompleteRecord, {});
+        std::uint64_t next_size = 0U;
+        if (!checked_add(journal_bytes_, record.size(), next_size) ||
+            next_size > limits_.max_journal_bytes) {
+            return Status::resource_limit;
+        }
+        if (file_ == nullptr || file_->write(record) != Status::ok) {
+            return Status::io;
+        }
+        const auto sync_status = file_->synchronize();
+        if (sync_status != Status::ok) {
+            return sync_status;
+        }
+        state_.completed = true;
         journal_bytes_ = next_size;
         return Status::ok;
     } catch (const std::bad_alloc&) {
@@ -554,9 +667,9 @@ Status ResumeJournal::snapshot(ResumeJournalState& state) const {
 }
 
 void ResumeJournal::close() noexcept {
-    if (stream_.is_open()) {
-        stream_.flush();
-        stream_.close();
+    if (file_ != nullptr) {
+        static_cast<void>(file_->close());
+        file_.reset();
     }
     path_.clear();
     limits_ = {};

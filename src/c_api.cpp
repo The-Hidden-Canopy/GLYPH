@@ -3,19 +3,33 @@
 #include "glyph/core/status.hpp"
 #include "glyph/frame/frame.hpp"
 #include "glyph/optical/surface.hpp"
+#include "glyph/session/session.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <new>
 #include <span>
+#include <string>
 #include <vector>
 
 struct glyph_mp0_renderer {
     glyph::optical::Mp0SurfaceConfig config{};
     glyph::optical::SurfaceLayout layout{};
+};
+
+struct glyph_sender {
+    glyph::session::SenderSession session{};
+    std::uint64_t block_size = 0U;
+};
+
+struct glyph_receiver {
+    glyph::session::ReceiverSession session{};
 };
 
 namespace {
@@ -107,6 +121,141 @@ bool valid_layout_output(const glyph_mp0_surface_layout_t& output) noexcept {
 bool valid_buffer_output(const glyph_mp0_surface_buffer_t& output) noexcept {
     return valid_input_header(output.struct_size, output.abi_version,
                               sizeof(glyph_mp0_surface_buffer_t));
+}
+
+glyph_status_t import_utf8_span(const glyph_utf8_span_t input,
+                                const bool required,
+                                std::string& output) {
+    if (input.size > std::numeric_limits<std::size_t>::max() ||
+        input.size > std::numeric_limits<std::ptrdiff_t>::max() ||
+        (input.size != 0U && input.data == nullptr)) {
+        return input.size > std::numeric_limits<std::size_t>::max() ||
+                       input.size > std::numeric_limits<std::ptrdiff_t>::max()
+                   ? GLYPH_STATUS_RESOURCE_LIMIT
+                   : GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    if (input.size != 0U &&
+        std::find(input.data, input.data + input.size, '\0') !=
+            input.data + input.size) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    output.assign(input.data == nullptr ? "" : input.data,
+                  static_cast<std::size_t>(input.size));
+    if (required && output.empty()) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    return GLYPH_STATUS_OK;
+}
+
+glyph_status_t import_byte_span(const glyph_byte_span_t* input,
+                                std::span<const std::byte>& output) noexcept {
+    if (input == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    if (input->size > std::numeric_limits<std::size_t>::max()) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    }
+    if (input->size != 0U && input->data == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    if (input->size == 0U) {
+        output = {};
+    } else {
+        output = std::span<const std::byte>(
+            reinterpret_cast<const std::byte*>(input->data),
+            static_cast<std::size_t>(input->size));
+    }
+    return GLYPH_STATUS_OK;
+}
+
+glyph_status_t import_sender_config(
+    const glyph_sender_config_t& input,
+    glyph::session::SenderConfig& output) {
+    if (!valid_input_header(input.struct_size, input.abi_version,
+                            sizeof(glyph_sender_config_t)) ||
+        input.reserved != 0U || input.max_object_size == 0U) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    output.transfer_id = {};
+    std::copy(std::begin(input.transfer_id), std::end(input.transfer_id),
+              output.transfer_id.begin());
+    output.block_size = input.block_size;
+    output.shard_size = input.shard_size;
+    output.object_limits.max_object_size = input.max_object_size;
+
+    auto status = import_utf8_span(input.display_name, true,
+                                   output.display_name);
+    if (status != GLYPH_STATUS_OK) {
+        return status;
+    }
+    status = import_utf8_span(input.media_type, false, output.media_type.emplace());
+    if (status != GLYPH_STATUS_OK) {
+        return status;
+    }
+    if (input.media_type.size == 0U) {
+        output.media_type.reset();
+    }
+    return import_utf8_span(input.fec_profile, true, output.fec_profile);
+}
+
+std::filesystem::path path_from_utf8(const std::string& value) {
+    const auto* data = reinterpret_cast<const char8_t*>(value.data());
+    return std::filesystem::path(std::u8string(data, value.size()));
+}
+
+glyph_status_t import_receiver_config(
+    const glyph_receiver_config_t& input,
+    glyph::session::ReceiverConfig& output) {
+    if (!valid_input_header(input.struct_size, input.abi_version,
+                            sizeof(glyph_receiver_config_t)) ||
+        input.max_object_size == 0U) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+
+    std::string output_root;
+    std::string journal_path;
+    std::string supported_profile;
+    auto status = import_utf8_span(input.output_root, true, output_root);
+    if (status != GLYPH_STATUS_OK) {
+        return status;
+    }
+    status = import_utf8_span(input.journal_path, true, journal_path);
+    if (status != GLYPH_STATUS_OK) {
+        return status;
+    }
+    status = import_utf8_span(input.supported_fec_profile, true,
+                              supported_profile);
+    if (status != GLYPH_STATUS_OK) {
+        return status;
+    }
+
+    output.output_root = path_from_utf8(output_root);
+    output.journal_path = path_from_utf8(journal_path);
+    output.supported_fec_profile = std::move(supported_profile);
+    output.object_limits.max_object_size = input.max_object_size;
+    if (input.io_buffer_bytes > std::numeric_limits<std::size_t>::max()) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    }
+    if (input.io_buffer_bytes != 0U) {
+        output.object_limits.io_buffer_bytes =
+            static_cast<std::size_t>(input.io_buffer_bytes);
+    }
+    if (input.max_journal_bytes != 0U) {
+        output.journal_limits.max_journal_bytes = input.max_journal_bytes;
+    }
+    if (input.max_shard_receipts != 0U) {
+        output.journal_limits.max_shard_receipts = input.max_shard_receipts;
+    }
+    if (input.max_verified_blocks != 0U) {
+        output.journal_limits.max_verified_blocks = input.max_verified_blocks;
+    }
+    return GLYPH_STATUS_OK;
+}
+
+std::string path_to_utf8(const std::filesystem::path& path) {
+    const auto value = path.u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()),
+                       value.size());
 }
 
 }  // namespace
@@ -279,6 +428,381 @@ glyph_status_t glyph_mp0_renderer_render(
         candidate.frame_seq = surface.frame_seq;
         candidate.hold_index = surface.hold_index;
         *output = candidate;
+        return GLYPH_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+std::uint32_t glyph_sender_state(const glyph_sender_t* sender) {
+    if (sender == nullptr) {
+        return UINT32_MAX;
+    }
+    return static_cast<std::uint32_t>(sender->session.state());
+}
+
+std::uint32_t glyph_receiver_state(const glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return UINT32_MAX;
+    }
+    return static_cast<std::uint32_t>(receiver->session.state());
+}
+
+glyph_status_t glyph_sender_create(
+    const glyph_byte_span_t* object,
+    const glyph_sender_config_t* config,
+    glyph_sender_t** sender) {
+    if (object == nullptr || config == nullptr || sender == nullptr ||
+        *sender != nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+
+    try {
+        std::span<const std::byte> object_span;
+        auto status = import_byte_span(object, object_span);
+        if (status != GLYPH_STATUS_OK) {
+            return status;
+        }
+        glyph::session::SenderConfig native_config;
+        status = import_sender_config(*config, native_config);
+        if (status != GLYPH_STATUS_OK) {
+            return status;
+        }
+        auto candidate = std::make_unique<glyph_sender>();
+        const auto create_status = glyph::session::SenderSession::create(
+            object_span, native_config, candidate->session);
+        if (create_status != glyph::Status::ok) {
+            return to_c_status(create_status);
+        }
+        candidate->block_size = native_config.block_size;
+        *sender = candidate.release();
+        return GLYPH_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_sender_open_file(
+    const glyph_utf8_span_t* source_path,
+    const glyph_sender_config_t* config,
+    glyph_sender_t** sender) {
+    if (source_path == nullptr || config == nullptr || sender == nullptr ||
+        *sender != nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+
+    try {
+        std::string native_source_path;
+        auto status = import_utf8_span(*source_path, true, native_source_path);
+        if (status != GLYPH_STATUS_OK) {
+            return status;
+        }
+        glyph::session::SenderConfig native_config;
+        status = import_sender_config(*config, native_config);
+        if (status != GLYPH_STATUS_OK) {
+            return status;
+        }
+        auto candidate = std::make_unique<glyph_sender>();
+        const auto open_status = glyph::session::SenderSession::open_file(
+            path_from_utf8(native_source_path), native_config,
+            candidate->session);
+        if (open_status != glyph::Status::ok) {
+            return to_c_status(open_status);
+        }
+        candidate->block_size = native_config.block_size;
+        *sender = candidate.release();
+        return GLYPH_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+void glyph_sender_destroy(glyph_sender_t* sender) { delete sender; }
+
+glyph_status_t glyph_sender_prepare(glyph_sender_t* sender) {
+    if (sender == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(sender->session.prepare());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_sender_begin_bootstrap(glyph_sender_t* sender) {
+    if (sender == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(sender->session.begin_bootstrap());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_sender_next_block(
+    glyph_sender_t* sender,
+    std::uint32_t* block_id,
+    std::uint8_t* bytes,
+    const std::uint64_t byte_capacity,
+    std::uint64_t* bytes_written,
+    std::uint32_t* available) {
+    if (sender == nullptr || block_id == nullptr || bytes == nullptr ||
+        bytes_written == nullptr || available == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    if (sender->block_size > std::numeric_limits<std::size_t>::max() ||
+        byte_capacity < sender->block_size) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    }
+
+    try {
+        glyph::session::LogicalBlock block;
+        bool native_available = false;
+        const auto status = sender->session.next_block(block, native_available);
+        if (status != glyph::Status::ok) {
+            return to_c_status(status);
+        }
+        if (native_available) {
+            if (block.bytes.size() > byte_capacity) {
+                return GLYPH_STATUS_RESOURCE_LIMIT;
+            }
+            std::memcpy(bytes, block.bytes.data(), block.bytes.size());
+        }
+        *block_id = block.block_id;
+        *bytes_written = static_cast<std::uint64_t>(block.bytes.size());
+        *available = native_available ? 1U : 0U;
+        return GLYPH_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_sender_get_manifest(
+    const glyph_sender_t* sender,
+    std::uint8_t* bytes,
+    const std::uint64_t byte_capacity,
+    std::uint64_t* bytes_written) {
+    if (sender == nullptr || bytes_written == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    const auto manifest = sender->session.manifest_bytes();
+    const auto required = static_cast<std::uint64_t>(manifest.size());
+    if (byte_capacity < required || (required != 0U && bytes == nullptr)) {
+        *bytes_written = required;
+        return byte_capacity < required ? GLYPH_STATUS_RESOURCE_LIMIT
+                                        : GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    if (required != 0U) {
+        std::memcpy(bytes, manifest.data(), manifest.size());
+    }
+    *bytes_written = required;
+    return GLYPH_STATUS_OK;
+}
+
+glyph_status_t glyph_sender_complete_final_repeat(glyph_sender_t* sender) {
+    if (sender == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(sender->session.complete_final_repeat());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+void glyph_sender_cancel(glyph_sender_t* sender) {
+    if (sender != nullptr) {
+        sender->session.cancel();
+    }
+}
+
+glyph_status_t glyph_sender_get_progress(const glyph_sender_t* sender,
+                                          std::uint64_t* bytes_emitted) {
+    if (sender == nullptr || bytes_emitted == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    *bytes_emitted = sender->session.bytes_emitted();
+    return GLYPH_STATUS_OK;
+}
+
+glyph_status_t glyph_receiver_create(
+    const glyph_receiver_config_t* config,
+    glyph_receiver_t** receiver) {
+    if (config == nullptr || receiver == nullptr || *receiver != nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+
+    try {
+        glyph::session::ReceiverConfig native_config;
+        const auto import_status = import_receiver_config(*config, native_config);
+        if (import_status != GLYPH_STATUS_OK) {
+            return import_status;
+        }
+        auto candidate = std::make_unique<glyph_receiver>();
+        const auto create_status = glyph::session::ReceiverSession::create(
+            native_config, candidate->session);
+        if (create_status != glyph::Status::ok) {
+            return to_c_status(create_status);
+        }
+        *receiver = candidate.release();
+        return GLYPH_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+void glyph_receiver_destroy(glyph_receiver_t* receiver) { delete receiver; }
+
+glyph_status_t glyph_receiver_begin_search(glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(receiver->session.begin_search());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_notify_surface_found(
+    glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(receiver->session.notify_surface_found());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_notify_calibrated(glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(receiver->session.notify_calibrated());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_submit_manifest(
+    glyph_receiver_t* receiver,
+    const glyph_byte_span_t* manifest) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::span<const std::byte> native_manifest;
+        const auto import_status = import_byte_span(manifest, native_manifest);
+        if (import_status != GLYPH_STATUS_OK) {
+            return import_status;
+        }
+        return to_c_status(receiver->session.submit_manifest(native_manifest));
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_submit_block(
+    glyph_receiver_t* receiver,
+    const std::uint32_t block_id,
+    const glyph_byte_span_t* bytes) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        std::span<const std::byte> native_bytes;
+        const auto import_status = import_byte_span(bytes, native_bytes);
+        if (import_status != GLYPH_STATUS_OK) {
+            return import_status;
+        }
+        return to_c_status(
+            receiver->session.submit_block(block_id, native_bytes));
+    } catch (const std::bad_alloc&) {
+        return GLYPH_STATUS_RESOURCE_LIMIT;
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_pause(glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(receiver->session.pause());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+glyph_status_t glyph_receiver_finalize(glyph_receiver_t* receiver) {
+    if (receiver == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return to_c_status(receiver->session.finalize());
+    } catch (...) {
+        return GLYPH_STATUS_UNSUPPORTED;
+    }
+}
+
+void glyph_receiver_cancel(glyph_receiver_t* receiver) {
+    if (receiver != nullptr) {
+        receiver->session.cancel();
+    }
+}
+
+glyph_status_t glyph_receiver_get_progress(
+    const glyph_receiver_t* receiver,
+    std::uint64_t* bytes_received) {
+    if (receiver == nullptr || bytes_received == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    *bytes_received = receiver->session.bytes_received();
+    return GLYPH_STATUS_OK;
+}
+
+glyph_status_t glyph_receiver_get_final_path(
+    const glyph_receiver_t* receiver,
+    char* output,
+    const std::uint64_t capacity,
+    std::uint64_t* required_bytes) {
+    if (receiver == nullptr || required_bytes == nullptr) {
+        return GLYPH_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        const auto& final_path = receiver->session.final_path();
+        if (final_path.empty()) {
+            return GLYPH_STATUS_INVALID_ARGUMENT;
+        }
+        const auto encoded = path_to_utf8(final_path);
+        const auto required = static_cast<std::uint64_t>(encoded.size() + 1U);
+        if (capacity < required) {
+            *required_bytes = required;
+            return GLYPH_STATUS_RESOURCE_LIMIT;
+        }
+        if (output == nullptr) {
+            return GLYPH_STATUS_INVALID_ARGUMENT;
+        }
+        std::memcpy(output, encoded.c_str(), encoded.size() + 1U);
+        *required_bytes = required;
         return GLYPH_STATUS_OK;
     } catch (const std::bad_alloc&) {
         return GLYPH_STATUS_RESOURCE_LIMIT;

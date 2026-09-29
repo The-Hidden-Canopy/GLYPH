@@ -1,7 +1,6 @@
-# C ABI: MP0 surface renderer
+# C ABI: MP0 surface and logical session
 
-Status: implemented as the first versioned, caller-buffered native binding
-surface.
+Status: implemented as a versioned, caller-buffered native binding surface.
 
 ## Contract
 
@@ -15,6 +14,16 @@ surface renderer:
 - status-code returns with no C++ exceptions crossing the boundary;
 - transactional output: failed render, malformed header, or insufficient
   output capacity does not modify the caller's output buffer or result fields.
+- opaque logical sender and receiver handles;
+- bounded local-file sender opening with emitted-byte re-verification before
+  final repeat;
+- caller-owned manifest/block buffers and explicit state/progress accessors;
+- UTF-8 path inputs for receiver storage, explicit pause/reopen/resume, and
+  final-path export only after verified promotion.
+
+Receiver block acknowledgement uses the native durable file-checkpoint path
+where the host provides one; a plain stream flush is not presented as crash
+durability.
 
 The handle stores the validated geometry and the current frame/hold identity.
 `glyph_mp0_renderer_set_frame` updates only that local rendering state; it does
@@ -22,17 +31,23 @@ not create a transfer, access a camera, open a file, or make a remote call.
 
 ## Deliberate boundary
 
-This is not yet the sender/receiver session ABI described by the mobile
-document. No object open, camera submission, progress journal, finalization,
-Android binding, or local-storage promotion API is exposed until those state
-and ownership contracts are implemented. The C boundary is therefore a
-surface-rendering milestone, not mobile integration or protocol conformance.
+The session ABI consumes caller-provided logical object bytes or a bounded local
+source file and already-accepted logical blocks. File sources are hashed before
+manifest emission, and the bytes actually emitted are hashed again before
+`FINAL_REPEAT`; a changed or truncated source cannot silently alter the
+transmitted object. The ABI does
+not acquire camera frames, render Android surfaces, perform JNI/Swift binding,
+expose shard recovery, or claim mobile/physical conformance. The sender block
+call requires a caller buffer at least as large as its configured block size.
+Receiver paths are local storage paths; no network, account, or remote service
+is involved.
 
 ## Evidence
 
 Evidence is source/unit. Tests cover ABI/version/structure validation,
 layout export, caller-buffer rendering, integrity rejection, bounded output
-capacity, frame-state updates, preservation of output on failure, and a
-standalone C compilation of the public header. The ABI has not been exercised
-through JNI, Swift, C#, Rust, Python, Android, or physical hardware in this
-slice.
+capacity, frame-state updates, preservation of output on failure, a complete
+C sender/receiver logical transfer, pause/reopen/resume, out-of-order block
+rejection, final-path export, and a standalone C compilation of the public
+header. The ABI has not been exercised through JNI, Swift, C#, Rust, Python,
+Android, camera acquisition, or physical hardware in this slice.

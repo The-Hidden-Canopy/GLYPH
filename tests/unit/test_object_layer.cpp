@@ -123,6 +123,23 @@ int main() {
     invalid.display_name = "bad\nname";
     assert(glyph::validate_manifest(invalid).status == glyph::Status::invalid_argument);
 
+    invalid = manifest;
+    invalid.display_name = std::string{"bad\xc3("};
+    assert(glyph::validate_manifest(invalid).status == glyph::Status::invalid_argument);
+    assert(glyph::encode_manifest(invalid).status == glyph::Status::invalid_argument);
+
+    auto malformed_utf8 = encoded.bytes;
+    const auto display_marker = bytes_from_string("sample.bin");
+    const auto display_position = std::search(
+        malformed_utf8.begin(), malformed_utf8.end(), display_marker.begin(),
+        display_marker.end());
+    assert(display_position != malformed_utf8.end());
+    malformed_utf8[static_cast<std::size_t>(
+        display_position - malformed_utf8.begin())] = static_cast<std::byte>(0xc3U);
+    malformed_utf8[static_cast<std::size_t>(
+        display_position - malformed_utf8.begin() + 1U)] = static_cast<std::byte>(0x28U);
+    assert(glyph::decode_manifest(malformed_utf8).status == glyph::Status::protocol);
+
     glyph::ManifestLimits tiny_limits;
     tiny_limits.max_object_size = 4U;
     assert(glyph::validate_manifest(manifest, tiny_limits).status ==
@@ -165,6 +182,35 @@ int main() {
            glyph::Status::integrity);
     assert(!std::filesystem::exists(root / "failed.bin"));
 
+    glyph::AtomicObjectWriter resumable_writer;
+    assert(glyph::AtomicObjectWriter::open_resumable(
+               root, "resumable.bin", digest, 0U, glyph::ObjectLimits{},
+               resumable_writer) == glyph::Status::ok);
+    assert(resumable_writer.write(object_span.first(4U)) == glyph::Status::ok);
+    assert(resumable_writer.durable_checkpoint() == glyph::Status::ok);
+    assert(resumable_writer.suspend() == glyph::Status::ok);
+    const auto resumable_partial = resumable_writer.temporary_path();
+    assert(!resumable_partial.empty());
+    std::ofstream tail(resumable_partial,
+                       std::ios::binary | std::ios::out | std::ios::app);
+    assert(tail.is_open());
+    tail.write("unverified-tail", 15);
+    assert(tail.good());
+    tail.close();
+
+    glyph::AtomicObjectWriter resumed_writer;
+    assert(glyph::AtomicObjectWriter::open_resumable(
+               root, "resumable.bin", digest, 4U, glyph::ObjectLimits{},
+               resumed_writer) == glyph::Status::ok);
+    assert(std::filesystem::file_size(resumed_writer.temporary_path()) == 4U);
+    glyph::AtomicObjectWriter concurrent_resumed_writer;
+    assert(glyph::AtomicObjectWriter::open_resumable(
+               root, "resumable.bin", digest, 4U, glyph::ObjectLimits{},
+               concurrent_resumed_writer) == glyph::Status::io);
+    assert(resumed_writer.write(object_span.subspan(4U)) == glyph::Status::ok);
+    assert(resumed_writer.finalize(object.size(), digest) == glyph::Status::ok);
+    assert(std::filesystem::exists(root / "resumable.bin"));
+
     glyph::ObjectLimits four_bytes;
     four_bytes.max_object_size = 4U;
     glyph::AtomicObjectWriter limited_writer;
@@ -178,6 +224,60 @@ int main() {
     assert(glyph::AtomicObjectWriter::open(root, "../received.bin",
                                            glyph::ObjectLimits{}, duplicate_writer) ==
            glyph::Status::io);
+
+    const auto symlink_target = root / "symlink-target.bin";
+    write_bytes(symlink_target, object);
+    std::error_code symlink_error;
+    const auto symlink_final = root / "symlink-final.bin";
+    std::filesystem::create_symlink(symlink_target, symlink_final,
+                                    symlink_error);
+    if (!symlink_error) {
+        glyph::AtomicObjectWriter symlink_final_writer;
+        assert(glyph::AtomicObjectWriter::open_resumable(
+                   root, "symlink-final.bin", digest, 0U,
+                   glyph::ObjectLimits{}, symlink_final_writer) ==
+                   glyph::Status::integrity);
+        assert(glyph::verify_object_file(symlink_final, object.size(), digest) ==
+               glyph::Status::integrity);
+    }
+
+    const auto symlink_partial =
+        root / ("partial-symlink.bin.glyph-partial-" +
+                glyph::digest_hex(digest));
+    std::error_code partial_symlink_error;
+    std::filesystem::create_symlink(symlink_target, symlink_partial,
+                                    partial_symlink_error);
+    if (!partial_symlink_error) {
+        glyph::AtomicObjectWriter symlink_partial_writer;
+        assert(glyph::AtomicObjectWriter::open_resumable(
+                   root, "partial-symlink.bin", digest, 0U,
+                   glyph::ObjectLimits{}, symlink_partial_writer) ==
+               glyph::Status::integrity);
+    }
+
+    const auto hardlink_partial =
+        root / ("partial-hardlink.bin.glyph-partial-" +
+                glyph::digest_hex(digest));
+    std::error_code hardlink_error;
+    std::filesystem::create_hard_link(symlink_target, hardlink_partial,
+                                      hardlink_error);
+    if (!hardlink_error) {
+        glyph::AtomicObjectWriter hardlink_writer;
+        assert(glyph::AtomicObjectWriter::open_resumable(
+                   root, "partial-hardlink.bin", digest, object.size(),
+                   glyph::ObjectLimits{}, hardlink_writer) ==
+               glyph::Status::integrity);
+    }
+
+    glyph::AtomicObjectWriter no_replace_writer;
+    assert(glyph::AtomicObjectWriter::open(
+               root, "no-replace.bin", glyph::ObjectLimits{},
+               no_replace_writer) == glyph::Status::ok);
+    assert(no_replace_writer.write(object_span) == glyph::Status::ok);
+    write_bytes(root / "no-replace.bin", object);
+    assert(no_replace_writer.finalize(object.size(), digest) ==
+           glyph::Status::io);
+    assert(std::filesystem::exists(root / "no-replace.bin"));
 
     std::error_code cleanup_error;
     std::filesystem::remove_all(root, cleanup_error);

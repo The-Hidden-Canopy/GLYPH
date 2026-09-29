@@ -16,12 +16,6 @@ constexpr Rgba8 kRed{255U, 0U, 0U, 255U};
 constexpr Rgba8 kGreen{0U, 255U, 0U, 255U};
 constexpr Rgba8 kBlue{0U, 0U, 255U, 255U};
 
-constexpr std::array<std::uint8_t, 9> kAnchorPattern{
-    1U, 1U, 1U,
-    1U, 0U, 0U,
-    1U, 0U, 1U,
-};
-
 bool aspect_matches(const Mp0SurfaceConfig& config) {
     switch (config.aspect) {
         case SurfaceAspect::landscape_16_9:
@@ -71,7 +65,8 @@ void paint_anchor(std::vector<Rgba8>& pixels,
             const auto pattern_index = row * kMp0AnchorCells + column;
             paint_cell(pixels, width, pitch, first_cell_x + column,
                        first_cell_y + row,
-                       kAnchorPattern[pattern_index] != 0U ? kWhite : kBlack);
+                       kMp0AnchorPattern[pattern_index] != 0U ? kWhite :
+                                                                 kBlack);
         }
     }
     paint_cell(pixels, width, pitch, first_cell_x + 1U, first_cell_y + 1U,

@@ -54,6 +54,15 @@ target_link_libraries(glyph_inner_fec_unit_tests PRIVATE glyph::core)
 
 add_test(NAME glyph.inner_fec.unit COMMAND glyph_inner_fec_unit_tests)
 
+add_executable(glyph_fec_group_assembler_unit_tests
+    unit/test_fec_group_assembler.cpp
+)
+
+target_link_libraries(glyph_fec_group_assembler_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.fec_group_assembler.unit
+         COMMAND glyph_fec_group_assembler_unit_tests)
+
 add_executable(glyph_interleaver_unit_tests
     unit/test_interleaver.cpp
 )
@@ -128,3 +137,46 @@ add_executable(glyph_simulator_unit_tests
 target_link_libraries(glyph_simulator_unit_tests PRIVATE glyph::core)
 
 add_test(NAME glyph.simulator.unit COMMAND glyph_simulator_unit_tests)
+
+add_executable(glyph_optical_decoder_unit_tests
+    unit/test_optical_decoder.cpp
+)
+
+target_link_libraries(glyph_optical_decoder_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.optical_decoder.unit COMMAND glyph_optical_decoder_unit_tests)
+
+add_executable(glyph_optical_frame_codec_unit_tests
+    unit/test_optical_frame_codec.cpp
+)
+
+target_link_libraries(glyph_optical_frame_codec_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.optical_frame_codec.unit
+         COMMAND glyph_optical_frame_codec_unit_tests)
+
+add_executable(glyph_synthetic_loopback_unit_tests
+    unit/test_synthetic_loopback.cpp
+)
+
+target_link_libraries(glyph_synthetic_loopback_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.synthetic_loopback.unit
+         COMMAND glyph_synthetic_loopback_unit_tests)
+
+add_executable(glyph_session_unit_tests
+    unit/test_session.cpp
+)
+
+target_link_libraries(glyph_session_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.session.unit COMMAND glyph_session_unit_tests)
+
+add_executable(glyph_synthetic_session_unit_tests
+    unit/test_synthetic_session.cpp
+)
+
+target_link_libraries(glyph_synthetic_session_unit_tests PRIVATE glyph::core)
+
+add_test(NAME glyph.synthetic_session.unit
+         COMMAND glyph_synthetic_session_unit_tests)

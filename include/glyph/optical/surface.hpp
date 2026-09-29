@@ -3,6 +3,7 @@
 #include "glyph/frame/frame.hpp"
 #include "glyph/phy/rgb8.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -18,6 +19,11 @@ inline constexpr std::uint32_t kMp0ControlRows = 7U;
 inline constexpr std::uint32_t kMp0CalibrationRows = 2U;
 inline constexpr std::size_t kMp0ControlCells = kFrameHeaderBytes * 4U;
 inline constexpr std::size_t kMp0ControlRepetitions = 2U;
+inline constexpr std::array<std::uint8_t, 9> kMp0AnchorPattern{
+    1U, 1U, 1U,
+    1U, 0U, 0U,
+    1U, 0U, 1U,
+};
 
 enum class SurfaceAspect : std::uint8_t {
     landscape_16_9 = 0,

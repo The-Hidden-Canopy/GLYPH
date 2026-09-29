@@ -72,8 +72,6 @@ int main() {
     auto all_drop = config;
     all_drop.noise_amplitude = 0U;
     all_drop.dropout_percent = 100U;
-    const auto before_failure = captured;
-    const auto receipt_before_failure = receipt;
     assert(glyph::sim::simulate_capture(source, all_drop, captured, receipt) ==
            Status::ok);
     assert(receipt.pixels_dropped == source.pixels.size());
@@ -90,8 +88,6 @@ int main() {
            std::vector<glyph::optical::Rgba8>(source.pixels.size(),
                                                glyph::optical::Rgba8{0U, 0U,
                                                                      0U, 255U}));
-    static_cast<void>(before_failure);
-    static_cast<void>(receipt_before_failure);
 
     auto malformed_source = source;
     malformed_source.pixels.pop_back();

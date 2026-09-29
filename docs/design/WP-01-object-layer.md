@@ -12,12 +12,12 @@ Status: implemented as a CPU/source-unit slice.
 - A bounded decoder for the same fixed core shape, with canonical ordering and
   unsupported secure/extension fields rejected closed.
 - Temporary output writes followed by length/hash verification and same-directory
-  rename promotion.
+  no-replace promotion through a retained secure file handle.
 - Display-name sanitization that prevents path separators, control characters,
   Windows device names, and overwrite of an existing final path.
 - An identity-bound append-only resume journal for idempotent shard receipts
-  and verified block ranges, with CRC-protected records, bounded replay, and
-  crash-tail truncation.
+  and verified block ranges, with CRC-protected records, bounded replay,
+  crash-tail truncation, GLJ2 versioning, and a session-only completion marker.
 
 ## Deliberate boundary
 

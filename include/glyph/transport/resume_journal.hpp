@@ -6,10 +6,18 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
+#include <memory>
 #include <vector>
 
 namespace glyph {
+
+namespace detail {
+class SecureFile;
+}
+
+namespace session {
+class ReceiverSession;
+}
 
 inline constexpr std::uint64_t kMaxResumeJournalBytes = 64ULL << 20U;
 inline constexpr std::uint32_t kMaxResumeShardReceipts = 1U << 20U;
@@ -51,18 +59,19 @@ struct ResumeJournalState {
     ResumeJournalIdentity identity{};
     std::vector<ResumeShardReceipt> shard_receipts;
     std::vector<ResumeBlockRange> verified_blocks;
+    bool completed = false;
 };
 
 class ResumeJournal final {
 public:
-    ResumeJournal() = default;
+    ResumeJournal() noexcept;
     ~ResumeJournal();
 
     ResumeJournal(const ResumeJournal&) = delete;
     ResumeJournal& operator=(const ResumeJournal&) = delete;
 
-    ResumeJournal(ResumeJournal&&) noexcept = default;
-    ResumeJournal& operator=(ResumeJournal&&) noexcept = default;
+    ResumeJournal(ResumeJournal&& other) noexcept;
+    ResumeJournal& operator=(ResumeJournal&& other) noexcept;
 
     // Opens an existing journal after identity validation, or creates a new
     // journal with an identity-bound header. A single writer is required.
@@ -73,7 +82,7 @@ public:
         ResumeJournal& journal);
 
     // Appends are idempotent. State is updated only after the record is
-    // written and flushed successfully.
+    // written, flushed, and durably synchronized successfully.
     [[nodiscard]] Status append_shard(std::uint16_t fec_group,
                                       std::uint16_t shard_index);
 
@@ -92,7 +101,14 @@ public:
     }
 
 private:
-    std::fstream stream_;
+    friend class session::ReceiverSession;
+
+    // Only ReceiverSession may emit the completion marker, after it has
+    // verified and promoted the object. Callers can still observe the marker
+    // through snapshot() after reopening the journal.
+    [[nodiscard]] Status append_complete();
+
+    std::unique_ptr<detail::SecureFile> file_;
     std::filesystem::path path_;
     ResumeJournalLimits limits_{};
     ResumeJournalState state_{};

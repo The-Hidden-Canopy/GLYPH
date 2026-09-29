@@ -18,12 +18,17 @@ add_library(glyph_core STATIC
     src/fec/inner_reed_solomon.cpp
     src/frame/interleaver.cpp
     src/frame/tile_payload.cpp
+    src/fec/group_assembler.cpp
     src/image/png.cpp
     src/manifest/manifest.cpp
+    src/optical/decoder.cpp
+    src/optical/frame_codec.cpp
     src/optical/surface.cpp
     src/phy/rgb8.cpp
     src/phy/rgb8_tile.cpp
     src/sim/simulator.cpp
+    src/session/session.cpp
+    src/transport/secure_file.cpp
     src/transport/object_io.cpp
     src/transport/resume_journal.cpp
 )

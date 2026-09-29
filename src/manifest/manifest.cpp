@@ -23,6 +23,60 @@ bool contains_control_byte(const std::string& value) {
     });
 }
 
+bool is_valid_utf8(const std::string_view value) noexcept {
+    const auto continuation = [](const unsigned char byte) noexcept {
+        return (byte & 0xc0U) == 0x80U;
+    };
+
+    for (std::size_t index = 0U; index < value.size(); ++index) {
+        const auto first = static_cast<unsigned char>(value[index]);
+        if (first <= 0x7fU) {
+            continue;
+        }
+        if (first >= 0xc2U && first <= 0xdfU) {
+            if (index + 1U >= value.size() ||
+                !continuation(static_cast<unsigned char>(value[index + 1U]))) {
+                return false;
+            }
+            index += 1U;
+            continue;
+        }
+        if (first >= 0xe0U && first <= 0xefU) {
+            if (index + 2U >= value.size()) {
+                return false;
+            }
+            const auto second = static_cast<unsigned char>(value[index + 1U]);
+            const auto third = static_cast<unsigned char>(value[index + 2U]);
+            if (!continuation(third) ||
+                (first == 0xe0U && second < 0xa0U) ||
+                (first == 0xedU && second > 0x9fU) ||
+                second < 0x80U || second > 0xbfU) {
+                return false;
+            }
+            index += 2U;
+            continue;
+        }
+        if (first >= 0xf0U && first <= 0xf4U) {
+            if (index + 3U >= value.size()) {
+                return false;
+            }
+            const auto second = static_cast<unsigned char>(value[index + 1U]);
+            const auto third = static_cast<unsigned char>(value[index + 2U]);
+            const auto fourth = static_cast<unsigned char>(value[index + 3U]);
+            if (!continuation(third) || !continuation(fourth) ||
+                (first == 0xf0U && second < 0x90U) ||
+                (first == 0xf4U && second > 0x8fU) ||
+                second < 0x80U || second > 0xbfU) {
+                return false;
+            }
+            index += 3U;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
 bool is_all_zero(const std::array<std::uint8_t, 16>& value) {
     return std::all_of(value.begin(), value.end(), [](const auto byte) {
         return byte == 0U;
@@ -165,6 +219,12 @@ public:
             return length > max_bytes ? Status::resource_limit
                                       : Status::protocol;
         }
+        const auto text = std::string_view(
+            reinterpret_cast<const char*>(bytes_.data() + offset_),
+            static_cast<std::size_t>(length));
+        if (!is_valid_utf8(text)) {
+            return Status::protocol;
+        }
         value.assign(reinterpret_cast<const char*>(bytes_.data() + offset_),
                      static_cast<std::size_t>(length));
         offset_ += static_cast<std::size_t>(length);
@@ -259,12 +319,14 @@ ManifestValidation validate_manifest(const Manifest& manifest,
     }
     if (manifest.display_name.empty() ||
         manifest.display_name.size() > limits.max_display_name_bytes ||
-        contains_control_byte(manifest.display_name)) {
+        contains_control_byte(manifest.display_name) ||
+        !is_valid_utf8(manifest.display_name)) {
         return failure(Status::invalid_argument, "invalid display_name");
     }
     if (manifest.media_type.has_value() &&
         (manifest.media_type->size() > limits.max_media_type_bytes ||
-         contains_control_byte(*manifest.media_type))) {
+         contains_control_byte(*manifest.media_type) ||
+         !is_valid_utf8(*manifest.media_type))) {
         return failure(Status::invalid_argument, "invalid media_type");
     }
     if (manifest.block_size == 0U ||
@@ -277,12 +339,14 @@ ManifestValidation validate_manifest(const Manifest& manifest,
     }
     if (manifest.fec_profile.empty() ||
         manifest.fec_profile.size() > limits.max_fec_profile_bytes ||
-        contains_control_byte(manifest.fec_profile)) {
+        contains_control_byte(manifest.fec_profile) ||
+        !is_valid_utf8(manifest.fec_profile)) {
         return failure(Status::invalid_argument, "invalid fec_profile");
     }
     if (manifest.created_at.has_value() &&
         (manifest.created_at->size() > limits.max_created_at_bytes ||
-         contains_control_byte(*manifest.created_at))) {
+         contains_control_byte(*manifest.created_at) ||
+         !is_valid_utf8(*manifest.created_at))) {
         return failure(Status::invalid_argument, "invalid created_at");
     }
 
