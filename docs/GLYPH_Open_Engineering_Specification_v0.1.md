@@ -120,27 +120,30 @@ SOURCE OBJECT -> manifest/hash -> chunk/FEC -> RGB modulation -> display -> came
 
 
 
-# 4. Reuse from Existing Hidden Canopy Engineering
+# 4. Reuse from Prior Engineering
 
-The connected repositories already contain useful engineering patterns. The public Glyph repository must build and test independently. The following donor areas were reviewed on 28 September 2026.
+Prior engineering prototypes and public standards informed the design. The
+public Glyph repository must build and test independently; it does not import,
+link, or disclose private repository implementation details. The following
+capability areas were reviewed on 28 September 2026.
 
 | Repository | Relevant area | Observed assets | Glyph boundary |
 
 | --- | --- | --- | --- |
 
-| private rendering prototype | Native rendering and capture | Vulkan/RHI, frame graph, offscreen viewport, bounded readback, CaptureRing/CaptureReceipt, exact RGBA/BGRA formats, GPU compute, frame receipts. Media code includes mp4.cpp, h264_syntax.cpp, h264_decoder.cpp. | Extract generic pixel-surface and readback concepts; do not make VANTA a build dependency. |
+| Rendering and capture prototype | Native rendering and capture | Vulkan/RHI, frame graph, offscreen viewport, bounded readback, exact pixel formats, GPU compute, and frame receipts. | Extract generic pixel-surface and readback concepts; do not make a private runtime a build dependency. |
 
-| private transport prototype | Secure/resumable session semantics | core/src/auth.rs, framing.rs, handshake.rs, key_exchange.rs, session.rs, storage.rs. README documents X25519/HKDF, ChaCha20-Poly1305, Ed25519, replay/counter binding, journals and idempotency. | Port protocol semantics or expose a clean library boundary; preserve independent Glyph build. |
+| Secure session prototype | Secure/resumable session semantics | Authentication, framing, key exchange, replay/counter binding, journals, and idempotency patterns. | Port protocol semantics only through a clean library boundary; preserve independent Glyph build. |
 
-| HAVEN | Offline local-device adapters | Native Windows/WinRT BLE central implementation, stable C ABI, GATT read/write, scanning; cursor-based sync provider contracts. | Use as design precedent for optional BLE feedback/negotiation adapters. |
+| Local-device adapter prototype | Offline local-device adapters | Stable C ABI, device discovery, bounded read/write, scanning, and cursor-based sync contracts. | Use as design precedent for optional feedback/negotiation adapters. |
 
-| Semantically-Aware_ISR | Loss/outage simulation | transmission/link_simulator.py models rate, loss, jitter, outages; video ingestion and OpenCV pipelines exist. | Generalize into an optical-channel simulator with spatial, temporal and chromatic impairment models. |
+| Channel simulation prototype | Loss/outage simulation | Rate, loss, jitter, outage, and video-ingestion patterns. | Generalize into an optical-channel simulator with spatial, temporal, and chromatic impairment models. |
 
-| OMNI-Q_Weird_Stuff_Machine | Camera/perception boundaries | FrameObserver and camera broker preserve capture metadata and frame-to-world provenance. | Reuse capture-metadata discipline, not planning/AI semantics. |
+| Camera/perception prototype | Camera/perception boundaries | Capture metadata and frame-to-world provenance. | Reuse capture-metadata discipline, not planning or AI semantics. |
 
-| private diagnostic adapter / private sensing prototype | Receipts and provenance | Integrity state, event lineage, raw-capture lineage and explicit provenance gaps. | Adopt receipt/audit patterns for benchmark and transfer evidence. |
+| Receipt/provenance prototypes | Receipts and provenance | Integrity state, event lineage, raw-capture lineage, and explicit provenance gaps. | Adopt receipt/audit patterns for benchmark and transfer evidence. |
 
-| private training prototype | Native SHA-256 and high-performance native code | native/src/sha256.cpp provides a self-contained streaming SHA-256 implementation; native C++/CUDA patterns exist. | Use SHA-256 semantics as baseline; public Glyph should include or depend on a maintained public implementation. |
+| Native performance prototype | Native SHA-256 and high-performance native code | Self-contained streaming SHA-256 and native C++/CUDA patterns. | Use SHA-256 semantics as baseline; public Glyph should include or depend on a maintained public implementation. |
 
 
 
@@ -1150,21 +1153,18 @@ The ABI should be event/poll oriented with explicit ownership and versioning.
 
 - Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
 
-## Reviewed Repository Areas
+## Reviewed Capability Areas
 
-- The-Hidden-Canopy/private rendering prototype — README.md; CMakeLists.txt; src/capture.cpp; src/mp4.cpp; src/h264_syntax.cpp; src/h264_decoder.cpp; include/vanta/*.
+- native rendering, capture, and bounded readback;
+- secure session, framing, and replay resistance;
+- optional local-device discovery and synchronization;
+- loss, jitter, outage, and optical-channel simulation;
+- camera metadata and frame-to-world provenance;
+- receipt, integrity, and lineage patterns;
+- streaming hashing and native performance techniques.
 
-- The-Hidden-Canopy/private transport prototype — README.md; core/src/auth.rs; framing.rs; handshake.rs; key_exchange.rs; session.rs; storage.rs.
-
-- The-Hidden-Canopy/HAVEN — haven/sync/contracts.py; haven/integrations/bluetooth/native.py; native/haven-bt/include/haven_bt.h; native/haven-bt Windows backend documentation.
-
-- The-Hidden-Canopy/Semantically-Aware_ISR — transmission/link_simulator.py; roi_encoder.py; video ingestion/demo pipeline.
-
-- The-Hidden-Canopy/OMNI-Q_Weird_Stuff_Machine — ARCHITECTURE.md; src/omni_q/frame_observer.py; perception broker/camera integration paths.
-
-- The-Hidden-Canopy/private diagnostic adapter and private sensing prototype — provenance, integrity, lineage and receipt patterns.
-
-- The-Hidden-Canopy/private training prototype — native SHA-256 implementation and native performance-oriented build patterns.
+Private implementation sources and deployment repositories are not part of the
+public dependency or disclosure surface.
 
 
 

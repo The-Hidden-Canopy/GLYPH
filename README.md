@@ -74,6 +74,15 @@ For memory and undefined-behavior checks, configure a separate build with
 The tested behavior is source/unit evidence only. It does not establish
 optical, GPU, camera, media, throughput, or 100 MiB conformance claims.
 
+## Public boundary
+
+This repository contains the standalone protocol foundation only. Private
+adapters, model weights, deployment bindings, service credentials, internal
+telemetry, and private repository implementation details are intentionally
+kept outside the public tree. Integrations must enter through documented,
+optional interfaces and must not turn the foundation into a dependency on a
+private runtime.
+
 ## Repository shape
 
 - `include/glyph/` — public C++ API surface; future stable C ABI belongs under
