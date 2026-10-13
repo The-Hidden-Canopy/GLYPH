@@ -598,7 +598,7 @@ Resume state includes transfer identity, manifest, shard receipt map, verified b
 
 
 
-private transport prototype’s journal/replay model is a useful precedent; Glyph should expose an independent compact transfer journal.
+A prior private journal/replay prototype is a useful precedent; Glyph should expose an independent compact transfer journal.
 
 # 19. Security and Abuse Resistance
 
