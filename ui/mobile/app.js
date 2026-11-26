@@ -205,7 +205,13 @@
     elements.transfersView.hidden = mode !== "transfers";
     elements.settingsView.hidden = mode !== "settings";
     document.querySelectorAll(".nav-button").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.mode === mode);
+      const selected = button.dataset.mode === mode;
+      button.classList.toggle("is-active", selected);
+      if (selected) {
+        button.setAttribute("aria-current", "page");
+      } else {
+        button.removeAttribute("aria-current");
+      }
     });
     if (mode === "send") {
       setSessionState(state.senderState, state.senderState === "IDLE" ? "quiet" : "active");

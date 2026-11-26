@@ -7,6 +7,14 @@ const html = await readFile(new URL("index.html", root), "utf8");
 const css = await readFile(new URL("styles.css", root), "utf8");
 const app = await readFile(new URL("app.js", root), "utf8");
 
+test("primary navigation exposes the current view to assistive technology", () => {
+  assert.equal([...html.matchAll(/aria-current="page"/g)].length, 1);
+  assert.match(html, /class="nav-button is-active"[^>]+aria-current="page"[^>]+data-mode="send"/);
+  assert.match(app, /const selected = button.dataset.mode === mode;/);
+  assert.match(app, /button.setAttribute\("aria-current", "page"\)/);
+  assert.match(app, /button.removeAttribute\("aria-current"\)/);
+});
+
 test("mobile UI exposes the explicit send and receive boundary", () => {
   assert.match(html, /id="send-view"/);
   assert.match(html, /id="receive-view"/);
