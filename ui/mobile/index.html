@@ -4,16 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#091016">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <meta name="description" content="GLYPH mobile-first offline optical transport UI preview">
   <title>GLYPH · Mobile Console</title>
+  <link rel="icon" type="image/png" href="glyph-icon.png">
+  <link rel="apple-touch-icon" href="glyph-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand-lockup">
-        <div class="brand-mark" aria-hidden="true">G</div>
+        <img class="brand-mark approved-icon" src="glyph-icon.png" alt="" width="34" height="34">
         <div>
           <div class="brand-name">GLYPH</div>
           <div class="brand-subtitle">offline optical transport</div>
@@ -22,6 +25,8 @@
       <div class="topbar-status" aria-label="Application boundaries">
         <span class="status-chip status-chip--quiet"><span class="status-dot"></span>OFFLINE ONLY</span>
         <span id="evidence-badge" class="status-chip status-chip--synthetic">UI PREVIEW</span>
+        <label class="chrome-theme">Theme <select id="chrome-theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+        <span id="update-pill" class="status-chip" hidden>Update available</span>
       </div>
     </header>
 
@@ -281,5 +286,6 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="app.js" defer></script>
+  <script src="chrome.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,8 @@
+{
+  "name": "GLYPH UI Preview",
+  "short_name": "GLYPH Preview",
+  "display": "browser",
+  "icons": [
+    { "src": "glyph-icon.png", "sizes": "1254x1254", "type": "image/png", "purpose": "any" }
+  ]
+}

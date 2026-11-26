@@ -1188,3 +1188,38 @@ body.reduce-motion *::after {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Shell appearance only. Optical preview cells keep authored colors. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fa;
+  --bg-raised: #ffffff;
+  --bg-raised-2: #e5edf1;
+  --bg-inset: #eef3f6;
+  --line: #b6c5ce;
+  --line-strong: #7b929f;
+  --text: #17262f;
+  --text-soft: #354951;
+  --text-muted: #536a75;
+  --teal: #106b58;
+  --teal-dark: #176b5c;
+  --cyan: #195f85;
+  --amber: #8a5405;
+  --red: #a72831;
+  --violet: #594098;
+  --shadow: 0 12px 36px rgba(20, 40, 50, .12);
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+.chrome-theme { display: flex; align-items: center; gap: .35rem; color: var(--text-soft); font-size: 12px; }
+.chrome-theme select { color: var(--text); background: var(--bg-raised); border: 1px solid var(--line-strong); border-radius: 8px; min-height: 44px; padding: 0 .5rem; }
+.topbar { background: var(--bg); border-bottom-color: var(--line); flex-wrap: wrap; }
+.topbar-status { justify-content: flex-end; }
+:root[data-theme="light"] .bottom-nav { background: var(--bg-raised); }
+:root[data-theme="light"] .surface-card,
+:root[data-theme="light"] .transfer-card,
+:root[data-theme="light"] .metric { background: var(--bg-raised); }
+@media (max-width: 480px) {
+  .topbar-status { width: 100%; justify-content: flex-start; }
+  .chrome-theme { margin-inline-start: auto; }
+}
+.brand-mark.approved-icon { object-fit: contain; padding: 0; background: transparent; box-shadow: none; border: none; }
