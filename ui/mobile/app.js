@@ -105,17 +105,17 @@
     send: {
       kicker: "LOCAL SESSION",
       title: "Send an object",
-      description: "Hash a local file, then hold this screen toward a receiving camera.",
+      description: "Choose a local file or explore a synthetic preview. No live transfer is available.",
     },
     receive: {
       kicker: "LOCAL SESSION",
       title: "Receive an object",
-      description: "Point the rear camera at a GLYPH surface. Nothing is promoted before verification.",
+      description: "Camera preview and synthetic walkthrough only. No receiver or decoder is connected.",
     },
     transfers: {
       kicker: "LOCAL JOURNAL",
       title: "Transfer history",
-      description: "Inspect local sessions, durable checkpoints, and the final integrity gate.",
+      description: "Inspect synthetic preview activity. No durable transfer history is available.",
     },
     settings: {
       kicker: "LOCAL POLICY",

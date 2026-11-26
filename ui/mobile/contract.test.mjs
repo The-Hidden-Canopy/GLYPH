@@ -37,3 +37,11 @@ test("mobile preview keeps the optical surface visibly synthetic", () => {
   assert.match(app, /Synthetic walkthrough only/);
   assert.match(app, /decoder is not attached/);
 });
+
+test("landing and navigation descriptions accurately disclose preview-only behavior", () => {
+  assert.match(html, /No live transfer is available/);
+  assert.match(app, /No live transfer is available/);
+  assert.match(app, /No receiver or decoder is connected/);
+  assert.match(app, /No durable transfer history is available/);
+  assert.doesNotMatch(app, /Inspect local sessions, durable checkpoints/);
+});
